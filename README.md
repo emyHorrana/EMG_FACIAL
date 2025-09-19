@@ -190,7 +190,7 @@ Contribuições são bem-vindas! Para contribuir:
 ## 👥 Autores
 
 - **Antonio Augusto** - *Desenvolvimento inicial* - [@AntonioAugusto](https://github.com/AntonioAugustoo)
--** ** - *Desenvolvimento inicial* - [@](https://github.com/)
+- **Emily Horrana** - *Desenvolvimento inicial* - [@emyHorrana](https://github.com/emyHorrana)
 
 ## 📞 Suporte
 

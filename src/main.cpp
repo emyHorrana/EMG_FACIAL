@@ -1,26 +1,43 @@
 #include <WiFi.h>
 #include <WebServer.h>
-#define ANALOG_PIN_1 34 // pino 34 como entrada analógica
-#define SAMPLE_INTERVAL_US 1000  // 1ms = 1000Hz
-#define RECORD_DURATION_MS 3000  // duração em milissegundos (3 segundos)
+
+#define ANALOG_PIN_1 34        // pino 34 como entrada analógica
+#define SAMPLE_INTERVAL_US 1000  // intervalo entre amostras (1ms = 1000 Hz)
+#define RECORD_DURATION_MS 3000  // duração da gravação (3 segundos)
 #define MAX_SAMPLES (RECORD_DURATION_MS)  // 1 amostra por ms (máximo 3000 amostras)
+#define WINDOW 10  // tamanho da janela da média móvel
+int filtroBuffer[WINDOW];
+long filtroSoma = 0;
+int filtroIndice = 0;
+int filtroCount = 0;
 
-const char* ssid = "ESP32_CSV"; // nome da rede
-const char* password = "12345678"; // senha da rede
+const char* ssid = "ESP32_CSV"; 
+const char* password = "12345678"; 
+WebServer server(80);
 
-WebServer server(80); // porta 80 para páginas web
+uint16_t bufferSignalRaw[MAX_SAMPLES];        // sinal bruto
+uint16_t bufferSignalFiltrado[MAX_SAMPLES];   // sinal filtrado
+uint32_t bufferTime[MAX_SAMPLES];             
+int sampleCount = 0;
 
-// Buffers de armazenamento
-uint16_t bufferSignal[MAX_SAMPLES]; // armazenas os valores lidos
-uint32_t bufferTime[MAX_SAMPLES]; // guarda o tempo em ms de cada leitura
-int sampleCount = 0; // contar a quantidade de amostras coletadasS
+String csvData = "Tempo (ms),Bruto,Filtrado\n";
+bool recording = false;
+unsigned long startTime = 0;
+unsigned long lastSampleTime = 0;
 
-String csvData = "Tempo (ms),Valor\n";
-bool recording = false; // gravação dos dados sim ou não
-unsigned long startTime = 0; // quando a gravação começou
-unsigned long lastSampleTime = 0; // última amostra feita
+// --------------------- FILTRO MEDIA MOVEL -----------------
 
-//Envia uma página HTML para o navegador quando acesso por IP
+int mediaMovel(int novoValor) {
+  filtroSoma -= filtroBuffer[filtroIndice];   // remove valor antigo
+  filtroBuffer[filtroIndice] = novoValor;     // insere novo valor
+  filtroSoma += novoValor;                    // soma valor novo
+
+  filtroIndice = (filtroIndice + 1) % WINDOW; // índice circular
+  if (filtroCount < WINDOW) filtroCount++;    // aumenta contagem até encher janela
+
+  return filtroSoma / filtroCount;            // retorna média
+}
+
 void handleRoot() {
   String html = R"rawliteral(
     <!DOCTYPE html>
@@ -39,8 +56,6 @@ void handleRoot() {
       <button onclick="startGravacao()">Iniciar Gravação</button>
       <button onclick="copiar()">Copiar CSV</button>
       <button onclick="baixar()">Baixar CSV</button>
-      
-
 
       <textarea id="csvArea" readonly></textarea>
       <script>
@@ -76,11 +91,10 @@ void handleRoot() {
   server.send(200, "text/html", html);
 }
 
-//Controle da gravação
 void handleStart() {
   if (!recording) {
     sampleCount = 0;
-    csvData = "Tempo (ms),Valor1\n";
+    csvData = "Tempo (ms),Bruto,Filtrado\n";
     startTime = millis();
     lastSampleTime = micros();
     recording = true;
@@ -88,7 +102,6 @@ void handleStart() {
   server.send(200, "text/plain", "Gravando...");
 }
 
-//Envio de dados
 void handleData() {
   server.send(200, "text/plain", csvData);
 }
@@ -96,17 +109,17 @@ void handleData() {
 void setup() {
   Serial.begin(115200);
   WiFi.softAP(ssid, password);
-  Serial.print("IP: "); // mostra o IP do ESP32
+  Serial.print("IP: ");
   Serial.println(WiFi.softAPIP());
 
-  server.on("/", handleRoot);       // página HTML
-  server.on("/start", handleStart); // inicia gravação
-  server.on("/data", handleData);   // envia os dados
-  server.begin(); // inicia o servidor
+  server.on("/", handleRoot);
+  server.on("/start", handleStart);
+  server.on("/data", handleData);
+  server.begin();
 }
 
 void loop() {
-  server.handleClient(); 
+  server.handleClient();
 
   if (recording) {
     unsigned long now_us = micros();
@@ -116,16 +129,22 @@ void loop() {
       lastSampleTime = now_us;
 
       if (sampleCount < MAX_SAMPLES) {
+        int leitura = analogRead(ANALOG_PIN_1);         // sinal bruto
+        int filtrado = mediaMovel(leitura);             // sinal filtrado
+
         bufferTime[sampleCount] = elapsed_ms;
-        bufferSignal[sampleCount] = analogRead(ANALOG_PIN_1);
+        bufferSignalRaw[sampleCount] = leitura;
+        bufferSignalFiltrado[sampleCount] = filtrado;
         sampleCount++;
       }
     }
 
     if (elapsed_ms > RECORD_DURATION_MS) {
-      // Monta CSV após gravação
+      // Monta CSV
       for (int i = 0; i < sampleCount; i++) {
-        csvData += String(bufferTime[i]) + "," + String(bufferSignal[i]) + "\n";
+        csvData += String(bufferTime[i]) + "," +
+                   String(bufferSignalRaw[i]) + "," +
+                   String(bufferSignalFiltrado[i]) + "\n";
       }
       recording = false;
     }

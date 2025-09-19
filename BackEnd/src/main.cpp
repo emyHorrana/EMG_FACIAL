@@ -1,4 +1,4 @@
-#include <Wifi.h>
+#include <WiFi.h>
 #include <WebServer.h>
 #define ANALOG_PIN_1 34 // pino 34 como entrada analógica
 #define SAMPLE_INTERVAL_US 1000  // 1ms = 1000Hz
@@ -13,7 +13,7 @@ WebServer server(80); // porta 80 para páginas web
 // Buffers de armazenamento
 uint16_t bufferSignal[MAX_SAMPLES]; // armazenas os valores lidos
 uint32_t bufferTime[MAX_SAMPLES]; // guarda o tempo em ms de cada leitura
-int sampleCount = 0; // contar a quantidade de amostras coletadas
+int sampleCount = 0; // contar a quantidade de amostras coletadasS
 
 String csvData = "Tempo (ms),Valor\n";
 bool recording = false; // gravação dos dados sim ou não
@@ -47,7 +47,7 @@ void handleRoot() {
         function startGravacao() {
           fetch('/start');
         }
-        setInterval() => {
+        setInterval(() => {
           fetch('/data')
             .then(response => response.text())
             .then(data => { document.getElementById("csvArea").value = data; });

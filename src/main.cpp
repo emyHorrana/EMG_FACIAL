@@ -1,22 +1,28 @@
+#include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
+#include <LittleFS.h>
 
-#define ANALOG_PIN_1 34        // pino 34 como entrada analógica
-#define SAMPLE_INTERVAL_US 1000  // intervalo entre amostras (1ms = 1000 Hz)
-#define RECORD_DURATION_MS 3000  // duração da gravação (3 segundos)
-#define MAX_SAMPLES (RECORD_DURATION_MS)  // 1 amostra por ms (máximo 3000 amostras)
-#define WINDOW 10  // tamanho da janela da média móvel
+#define ANALOG_PIN_1 34        
+#define SAMPLE_INTERVAL_US 1000  
+#define RECORD_DURATION_MS 3000  
+#define MAX_SAMPLES (RECORD_DURATION_MS)  
+#define WINDOW 10  
+// Configurações do Wi-Fi (Access Point)
+const char *ssid = "ESP32_AP";
+const char *password = "12345678";
+
+WebServer server(80);
+
+
+// ---------------- VARIÁVEIS ----------------
 int filtroBuffer[WINDOW];
 long filtroSoma = 0;
 int filtroIndice = 0;
 int filtroCount = 0;
 
-const char* ssid = "ESP32_CSV"; 
-const char* password = "12345678"; 
-WebServer server(80);
-
-uint16_t bufferSignalRaw[MAX_SAMPLES];        // sinal bruto
-uint16_t bufferSignalFiltrado[MAX_SAMPLES];   // sinal filtrado
+uint16_t bufferSignalRaw[MAX_SAMPLES];        
+uint16_t bufferSignalFiltrado[MAX_SAMPLES];   
 uint32_t bufferTime[MAX_SAMPLES];             
 int sampleCount = 0;
 
@@ -25,74 +31,56 @@ bool recording = false;
 unsigned long startTime = 0;
 unsigned long lastSampleTime = 0;
 
-// --------------------- FILTRO MEDIA MOVEL -----------------
-
+// ---------------- FILTRO ----------------
 int mediaMovel(int novoValor) {
-  filtroSoma -= filtroBuffer[filtroIndice];   // remove valor antigo
-  filtroBuffer[filtroIndice] = novoValor;     // insere novo valor
-  filtroSoma += novoValor;                    // soma valor novo
+  filtroSoma -= filtroBuffer[filtroIndice];
+  filtroBuffer[filtroIndice] = novoValor;
+  filtroSoma += novoValor;
 
-  filtroIndice = (filtroIndice + 1) % WINDOW; // índice circular
-  if (filtroCount < WINDOW) filtroCount++;    // aumenta contagem até encher janela
+  filtroIndice = (filtroIndice + 1) % WINDOW;
+  if (filtroCount < WINDOW) filtroCount++;
 
-  return filtroSoma / filtroCount;            // retorna média
+  return filtroSoma / filtroCount;
 }
 
-void handleRoot() {
-  String html = R"rawliteral(
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Coleta ESP32</title>
-      <meta charset="utf-8">
-      <style>
-        body { font-family: Arial; text-align: center; margin: 20px; }
-        textarea { width: 90%; height: 300px; }
-        button { padding: 10px 20px; margin: 10px; font-size: 16px; }
-      </style>
-    </head>
-    <body>
-      <h2>Coleta de Dados Analógicos</h2>
-      <button onclick="startGravacao()">Iniciar Gravação</button>
-      <button onclick="copiar()">Copiar CSV</button>
-      <button onclick="baixar()">Baixar CSV</button>
+// Função para determinar o tipo de conteúdo
+String getContentType(String filename) {
+  if (filename.endsWith(".htm") || filename.endsWith(".html")) return "text/html";
+  else if (filename.endsWith(".css")) return "text/css";
+  else if (filename.endsWith(".js")) return "application/javascript";
+  else if (filename.endsWith(".png")) return "image/png";
+  else if (filename.endsWith(".jpg")) return "image/jpeg";
+  else if (filename.endsWith(".ico")) return "image/x-icon";
+  else if (filename.endsWith(".json")) return "application/json";
+  return "text/plain";
+}
 
-      <textarea id="csvArea" readonly></textarea>
-      <script>
-        function startGravacao() {
-          fetch('/start');
-        }
-        setInterval(() => {
-          fetch('/data')
-            .then(response => response.text())
-            .then(data => { document.getElementById("csvArea").value = data; });
-        }, 1000);
+// Função para servir arquivos do LittleFS
+bool handleFileRead(String path) {
+  if (path.endsWith("/")) path += "index.html";  // abre index.html por padrão
+  String contentType = getContentType(path);
+  File file = LittleFS.open(path, "r");
+  if (!file) {
+    Serial.println("Arquivo não encontrado: " + path);
+    return false;
+  }
+  server.streamFile(file, contentType);
+  file.close();
+  return true;
+}
 
-        function copiar() {
-          let txt = document.getElementById("csvArea");
-          txt.select();
-          document.execCommand("copy");
-        }
+// ---------------- ROTAS ----------------
+void handleNotFound() {
+  String uri = server.uri();
+  Serial.println("Requisição não encontrada: " + uri);
 
-        function baixar() {
-          const blob = new Blob([document.getElementById("csvArea").value], { type: "text/csv" });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = "dados.csv";
-          a.click();
-          URL.revokeObjectURL(url);
-        }
-      </script>
-    </body>
-    </html>
-  )rawliteral";
-
-  server.send(200, "text/html", html);
+  if(!handleFileRead(uri)){
+    server.send(404, "text/plain", "Arquivo não encontrado");
+  }
 }
 
 void handleStart() {
-  if (!recording) {
+  if(!recording){
     sampleCount = 0;
     csvData = "Tempo (ms),Bruto,Filtrado\n";
     startTime = millis();
@@ -108,29 +96,61 @@ void handleData() {
 
 void setup() {
   Serial.begin(115200);
+  delay(1000);
+
+  // Inicializa o LittleFS
+  if (!LittleFS.begin()) {
+    Serial.println("Erro ao montar LittleFS!");
+    return;
+  }
+  Serial.println("LittleFS montado com sucesso");
+
+  // Lista os arquivos carregados
+  Serial.println("Arquivos disponíveis:");
+  File root = LittleFS.open("/");
+  File file = root.openNextFile();
+  while (file) {
+    Serial.println(String(" - ") + file.name());
+    file = root.openNextFile();
+  }
+
+  // Cria o Access Point
   WiFi.softAP(ssid, password);
-  Serial.print("IP: ");
+  Serial.println("Access Point iniciado");
+  Serial.print("IP do AP: ");
   Serial.println(WiFi.softAPIP());
 
-  server.on("/", handleRoot);
+  // Rota padrão para arquivos
+  server.onNotFound([]() {
+    if (!handleFileRead(server.uri())) {
+      server.send(404, "text/plain", "Arquivo não encontrado");
+    }
+  });
+
+  // Evita warnings de favicon
+  server.on("/favicon.ico", []() {
+    server.send(204);
+  });
+
   server.on("/start", handleStart);
   server.on("/data", handleData);
+
   server.begin();
+  Serial.println("Servidor HTTP iniciado");
 }
 
 void loop() {
   server.handleClient();
-
-  if (recording) {
+   if(recording){
     unsigned long now_us = micros();
     unsigned long elapsed_ms = millis() - startTime;
 
-    if (elapsed_ms <= RECORD_DURATION_MS && (now_us - lastSampleTime >= SAMPLE_INTERVAL_US)) {
+    if(elapsed_ms <= RECORD_DURATION_MS && (now_us - lastSampleTime >= SAMPLE_INTERVAL_US)){
       lastSampleTime = now_us;
 
-      if (sampleCount < MAX_SAMPLES) {
-        int leitura = analogRead(ANALOG_PIN_1);         // sinal bruto
-        int filtrado = mediaMovel(leitura);             // sinal filtrado
+      if(sampleCount < MAX_SAMPLES){
+        int leitura = analogRead(ANALOG_PIN_1);
+        int filtrado = mediaMovel(leitura);
 
         bufferTime[sampleCount] = elapsed_ms;
         bufferSignalRaw[sampleCount] = leitura;
@@ -139,14 +159,14 @@ void loop() {
       }
     }
 
-    if (elapsed_ms > RECORD_DURATION_MS) {
-      // Monta CSV
-      for (int i = 0; i < sampleCount; i++) {
+    if(elapsed_ms > RECORD_DURATION_MS){
+      for(int i=0; i<sampleCount; i++){
         csvData += String(bufferTime[i]) + "," +
                    String(bufferSignalRaw[i]) + "," +
                    String(bufferSignalFiltrado[i]) + "\n";
       }
       recording = false;
+      Serial.println("Captura finalizada!");
     }
   }
 }

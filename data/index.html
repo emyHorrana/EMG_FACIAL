@@ -4,14 +4,14 @@
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Monitor de Sinais - Eletrodo</title>
-	<link rel="stylesheet" href="homepage.css">
+	<link rel="stylesheet" href="style.css">
 	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 	<div class="container">
 
 		<div class="header">
-			<h1>⚕️⚡ EMG Facial⚡⚕️</h1>
+			<h1> EMG Facial</h1>
 			<p>Medição de dados encontrados</p>
 		</div>
 
@@ -22,13 +22,13 @@
 
 		<div class="main-content">
 			<div class="controls">
-				<button class="btn btn-primary" id="startBtn">
+				<button class="btn btn-primary" id="startBtn" onclick="startGravacao()">
 					▶️ Iniciar Captura
 				</button>
-				<button class="btn btn-danger" id="stopBtn" disabled>
+				<button class="btn btn-danger" id="stopBtn" disabled onclick="copiar()">
 					⏹️ Parar Captura
 				</button>
-				<button class="btn btn-success" id="exportBtn">
+				<button class="btn btn-success" id="exportBtn" onclick="baixar()">
 					💾 Exportar Dados
 				</button>
 				<button class="btn btn-warning" id="clearBtn">
@@ -44,7 +44,10 @@
 
 				<div class="chart-container">
 					<h3>📈 Sinal em Tempo Real</h3>
-					<canvas id="signalChart" width="400" height="200"></canvas>
+					
+					<canvas id="signalChart" width="400" height="200">
+						<textarea id="csvArea" readonly></textarea>
+					</canvas>
 				</div>
 
 				<div class="stats-container">
@@ -89,6 +92,6 @@
 	<div id="toast" style="display:none;position:fixed;bottom:32px;right:32px;z-index:9999;min-width:220px;padding:18px 28px;background:rgba(44,62,80,0.97);color:#fff;border-radius:12px;box-shadow:0 4px 24px rgba(44,62,80,0.18);font-size:1rem;font-weight:500;letter-spacing:0.2px;transition:opacity 0.4s;opacity:0;pointer-events:none;">
 		Dados exportados com sucesso!
 	</div>
-	<script src="homepage.js"></script>
+	<script src="script.js"></script>
 </body>
 </html>

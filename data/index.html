@@ -1,97 +1,112 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Monitor de Sinais - Eletrodo</title>
-	<link rel="stylesheet" href="style.css">
-	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitor de Sinais - EMG Facial</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
+    <script src="script.js" defer></script>
 </head>
 <body>
-	<div class="container">
+    <div class="container">
+        <header class="header">
+            <h1>EMG Facial</h1>
+            <p>Medição de dados encontrados</p>
+        </header>
 
-		<div class="header">
-			<h1> EMG Facial</h1>
-			<p>Medição de dados encontrados</p>
-		</div>
+        <div class="connection-indicator">
+            <div class="connection-dot"></div>
+            Eletrodo Conectado
+        </div>
 
-		<div class="connection-indicator">
-			<div class="connection-dot"></div>
-			Eletrodo Conectado
-		</div>
+        <main class="main-content">
+            <div class="controls">
+                <button class="btn btn-primary" id="startBtn">
+                    ▶️ Clique para Iniciar a Captura
+                </button>
+                <button class="btn btn-success" id="exportBtn">
+                    💾 Exportar Dados
+                </button>
+                <button class="btn btn-warning" id="clearBtn">
+                    🧹 Limpar Registro
+                </button>
+                <div class="status stopped" id="status">
+                    <div class="pulse"></div>
+                    Parado
+                </div>
+            </div>
 
-		<div class="main-content">
-			<div class="controls">
-				<button class="btn btn-primary" id="startBtn" onclick="startGravacao()">
-					▶️ Iniciar Captura
-				</button>
-				<button class="btn btn-danger" id="stopBtn" disabled onclick="copiar()">
-					⏹️ Parar Captura
-				</button>
-				<button class="btn btn-success" id="exportBtn" onclick="baixar()">
-					💾 Exportar Dados
-				</button>
-				<button class="btn btn-warning" id="clearBtn">
-					🧹 Limpar Registro
-				</button>
-				<div class="status stopped" id="status">
-					<div class="pulse"></div>
-					Parado
-				</div>
-			</div>
+            <div id="captureModal" class="capture-modal" style="display: none;">
+                <div class="modal-content">
+                    <div class="capture-stage" id="captureStage">
+                        <div class="stage-content">
+                            <div class="stage-emoji" id="stageEmoji"></div>
+                            <div class="stage-text" id="stageText"></div>
+                            <div class="countdown" id="countdown"></div>
+                            <div class="progress-container" id="progressContainer" style="display: none;">
+                                <div class="progress-bar">
+                                    <div class="progress-fill" id="progressFill"></div>
+                                </div>
+                                <div class="progress-text" id="progressText"></div>
+                            </div>
+                        </div>
+                        <div class="modal-controls" id="modalControls" style="display: none;">
+                            <button class="btn btn-danger btn-modal-stop" id="modalStopBtn">
+                                ⏹️ Parar Captura
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-			<div class="dashboard">
+            <div class="dashboard">
+                <div class="chart-container">
+                    <h3>📈 Sinal em Tempo Real</h3>
+                    <canvas id="signalChart" width="400" height="200"></canvas>
+                </div>
+                <div class="stats-container">
+                    <h3>📊 Estatísticas</h3>
+                    <div class="stat-card">
+                        <h4>Amplitude Atual</h4>
+                        <div class="stat-value" id="currentAmplitude">0.00 mV</div>
+                    </div>
+                    <div class="stat-card">
+                        <h4>Frequência Média</h4>
+                        <div class="stat-value" id="avgFrequency">0.0 Hz</div>
+                    </div>
+                    <div class="stat-card">
+                        <h4>Amostras Coletadas</h4>
+                        <div class="stat-value" id="sampleCount">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <h4>Tempo de Gravação</h4>
+                        <div class="stat-value" id="recordingTime">00:00</div>
+                    </div>
+                </div>
+            </div>
 
-				<div class="chart-container">
-					<h3>📈 Sinal em Tempo Real</h3>
-					
-					<canvas id="signalChart" width="400" height="200">
-						<textarea id="csvArea" readonly></textarea>
-					</canvas>
-				</div>
+            <div class="data-table-container">
+                <h3>📋 Registro de Dados</h3>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Data e Hora</th>
+                            <th>Amplitude (mV)</th>
+                            <th>Frequência (Hz)</th>
+                            <th>Qualidade</th>
+                            <th>Ação</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dataTableBody">
+                        </tbody>
+                </table>
+            </div>
+        </main>
+    </div>
 
-				<div class="stats-container">
-					<h3>📊 Estatísticas</h3>
-					<div class="stat-card">
-						<h4>Amplitude Atual</h4>
-						<div class="stat-value" id="currentAmplitude">0.00 mV</div>
-					</div>
-					<div class="stat-card">
-						<h4>Frequência Média</h4>
-						<div class="stat-value" id="avgFrequency">0.0 Hz</div>
-					</div>
-					<div class="stat-card">
-						<h4>Amostras Coletadas</h4>
-						<div class="stat-value" id="sampleCount">0</div>
-					</div>
-					<div class="stat-card">
-						<h4>Tempo de Gravação</h4>
-						<div class="stat-value" id="recordingTime">00:00</div>
-					</div>
-				</div>
-			</div>
-
-			<div class="data-table-container">
-				<h3>📋 Registro de Dados</h3>
-				<table class="data-table">
-					<thead>
-						<tr>
-							<th>Timestamp</th>
-							<th>Amplitude (mV)</th>
-							<th>Frequência (Hz)</th>
-							<th>Qualidade</th>
-						</tr>
-					</thead>
-					<tbody id="dataTableBody">
-						<!-- Dados serão inseridos aqui -->
-					</tbody>
-				</table>
-			</div>
-		</div>
-	</div>
-	<div id="toast" style="display:none;position:fixed;bottom:32px;right:32px;z-index:9999;min-width:220px;padding:18px 28px;background:rgba(44,62,80,0.97);color:#fff;border-radius:12px;box-shadow:0 4px 24px rgba(44,62,80,0.18);font-size:1rem;font-weight:500;letter-spacing:0.2px;transition:opacity 0.4s;opacity:0;pointer-events:none;">
-		Dados exportados com sucesso!
-	</div>
-	<script src="script.js"></script>
+    <div id="toast" style="display:none;position:fixed;bottom:32px;right:32px;z-index:9999;min-width:220px;padding:18px 28px;background:rgba(44,62,80,0.97);color:#fff;border-radius:12px;box-shadow:0 4px 24px rgba(44,62,80,0.18);font-size:1rem;font-weight:500;transition:opacity 0.4s;opacity:0;pointer-events:none;"></div>
+    
+    <textarea id="csvArea" readonly style="display: none;"></textarea>
 </body>
 </html>

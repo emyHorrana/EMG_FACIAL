@@ -139,6 +139,7 @@ void setup() {
   Serial.println("Servidor HTTP iniciado");
 }
 
+
 void loop() {
   server.handleClient();
    if(recording){
@@ -170,3 +171,4 @@ void loop() {
     }
   }
 }
+ 

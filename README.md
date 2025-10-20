@@ -187,16 +187,10 @@ Contribuições são bem-vindas! Para contribuir:
 
 
 
-## 👥 Autores
+## 👥 Autores - Desenvolvimento inicial
 
-- **Antonio Augusto** - *Desenvolvimento inicial* - [@AntonioAugusto](https://github.com/AntonioAugustoo)
--** ** - *Desenvolvimento inicial* - [@](https://github.com/)
-
-## 📞 Suporte
-
-Para suporte técnico ou dúvidas:
-- 📧 Email: [eHealth@inatel.br]
-- 💬 Issues: [GitHub Issues](https://github.com/AntonioAugustoo/EMG_FACIAL/issues)
+- **Antonio Augusto** - *Front-end* - [@AntonioAugusto](https://github.com/AntonioAugustoo)
+-**Emily Horrana** - *Back-end* - [@emyHorrana](https://github.com/emyHorrana)
 
 ## 🔗 Links Úteis
 
@@ -207,4 +201,4 @@ Para suporte técnico ou dúvidas:
 
 ---
 
-⚡ **Transformando sorrisos em dados, dados em conhecimento!** ⚡ 
+**Transformando sorrisos em dados, dados em conhecimento!**  

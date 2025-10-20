@@ -17,7 +17,7 @@ const char *password = "12345678";
 WebServer server(80); 
 
 // -------------------- VARIÁVEIS DO FILTRO --------------------
-int filtroBuffer[WINDOW];   // Vetor circular para armazenar as últimas N leituras
+int filtroBuffer[WINDOW];   // Vetor para armazenar as últimas N leituras
 long filtroSoma = 0;        // Soma acumulada das leituras no buffer
 int filtroIndice = 0;       // Índice atual dentro do buffer (para controle circular)
 int filtroCount = 0;        // Contador de quantas amostras já foram armazenadas (até atingir WINDOW)
@@ -126,6 +126,7 @@ void handleStart() {
     recording = true;
   }
   server.send(200, "text/plain", "Gravando...");
+  }
 }
 
 // Envia os dados coletados ao cliente (rota /data)

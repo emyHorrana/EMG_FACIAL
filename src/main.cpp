@@ -118,6 +118,7 @@ void handleNotFound() {
 // Inicia a gravação dos dados (rota /start)
 void handleStart() {
   if(!recording){
+  if(!recording){
     sampleCount = 0;
     csvData = "Tempo (ms),Bruto,Filtrado\n";  // Reinicia o CSV
     startTime = millis();
@@ -157,6 +158,8 @@ void setup() {
   WiFi.softAP(ssid, password);
   Serial.println("Access Point iniciado");
   Serial.print("IP do AP: ");
+  Serial.println("Access Point iniciado");
+  Serial.print("IP do AP: ");
   Serial.println(WiFi.softAPIP());
 
   // Configura rotas HTTP
@@ -175,6 +178,7 @@ void setup() {
   server.on("/data", handleData);   // Envia os dados coletados
 
   server.begin();
+  Serial.println("Servidor HTTP iniciado");
   Serial.println("Servidor HTTP iniciado");
 }
 
@@ -213,6 +217,8 @@ void loop() {
       }
       recording = false;
       Serial.println("Captura finalizada!");
+      Serial.println("Captura finalizada!");
     }
   }
 }
+ 

@@ -163,8 +163,8 @@ EMG_FACIAL/
 ```
 ## 👥 Autores - Desenvolvimento inicial
 
-- **Antonio Augusto** - *Front-end* - [@AntonioAugusto](https://github.com/AntonioAugustoo)
-- **Emily Horrana** - *Back-end* - [@emyHorrana](https://github.com/emyHorrana)
+- **Antonio Augusto** - *FrontEnd* - [@AntonioAugusto](https://github.com/AntonioAugustoo)
+- **Emily Horrana** - *BackEnd* - [@emyHorrana](https://github.com/emyHorrana)
 
 ## 🔗 Links Úteis
 

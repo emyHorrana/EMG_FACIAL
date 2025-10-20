@@ -190,7 +190,7 @@ Contribuições são bem-vindas! Para contribuir:
 ## 👥 Autores - Desenvolvimento inicial
 
 - **Antonio Augusto** - *Front-end* - [@AntonioAugusto](https://github.com/AntonioAugustoo)
--**Emily Horrana** - *Back-end* - [@emyHorrana](https://github.com/emyHorrana)
+- **Emily Horrana** - *Back-end* - [@emyHorrana](https://github.com/emyHorrana)
 
 ## 🔗 Links Úteis
 

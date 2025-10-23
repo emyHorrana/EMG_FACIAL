@@ -387,4 +387,7 @@ function safeSetTimeout(callback, delay) {
         callback();
     }, delay);
     state.activeTimers.push(id);
+
+
+    //teste de commit para ver se funciona o push 
 }

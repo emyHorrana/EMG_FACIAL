@@ -94,26 +94,6 @@ ESP32 → Eletrodos EMG → Músculo Zigomático
 - **Chart.js**: Biblioteca para gráficos
 - **Web APIs**: FileSystem, Blob, URL para exportação
 
-## 📁 Estrutura do Projeto
-
-```
-EMG_FACIAL/
-├── README.md                 # Documentação principal
-├── .gitignore               # Arquivos ignorados pelo Git
-├── BackEnd/                 # Código do ESP32
-│   ├── platformio.ini       # Configurações do PlatformIO
-│   ├── src/
-│   │   └── main.cpp         # Código principal do ESP32
-│   ├── include/             # Headers personalizados
-│   ├── lib/                 # Bibliotecas locais
-│   └── test/                # Testes unitários
-└── FrontEnd/                # Interface Web
-    ├── homepage.html        # Página principal
-    ├── homepage.css         # Estilos da interface
-    ├── homepage.js          # Lógica da aplicação
-    └── README.md            # Documentação do frontend
-```
-
 ## 🔧 Configuração e Instalação
 
 ### Pré-requisitos
@@ -143,21 +123,6 @@ code .
 4. **Acesse a Interface**
 - Conecte WiFi "ESP32_CSV" (senha: 12345678)
 - Abra navegador: `http://192.168.4.1`
-
-## 📊 Especificações Técnicas
-
-### Parâmetros de Captura
-- **Taxa de Amostragem**: 1000 Hz (1 amostra/ms)
-- **Duração**: 3 segundos por sessão
-- **Resolução**: 12 bits (4096 níveis)
-- **Faixa Dinâmica**: 0-3.3V (ESP32)
-
-### Performance
-- **Latência**: < 100ms para visualização
-- **Capacidade**: até 3000 amostras/sessão
-- **Precisão**: ±0.8mV típico
-- **Conectividade**: WiFi 802.11 b/g/n
-
 ## 🎓 Aplicações
 
 ### Área Médica
@@ -170,33 +135,36 @@ code .
 - Estudos de emoção
 - Interface homem-máquina
 
-### Entretenimento
-- Jogos interativos
-- Aplicações de bem-estar
-- Biofeedback
+## 📊 Especificações Técnicas
 
-## 🤝 Contribuição
+### Parâmetros de Captura
+- **Taxa de Amostragem**: 1000 Hz (1 amostra/ms)
+- **Duração**: 3 segundos por sessão
+- **Resolução**: 12 bits (4096 níveis)
+- **Faixa Dinâmica**: 0-3.3V (ESP32)
 
-Contribuições são bem-vindas! Para contribuir:
+## 📁 Estrutura do Projeto
 
-1. Faça fork do projeto
-2. Crie uma branch para sua feature (`git checkout -b feature/AmazingFeature`)
-3. Commit suas mudanças (`git commit -m 'Add some AmazingFeature'`)
-4. Push para a branch (`git push origin feature/AmazingFeature`)
-5. Abra um Pull Request
+```
+EMG_FACIAL/
+├── README.md                 # Documentação principal
+├── .gitignore               # Arquivos ignorados pelo Git
+├── BackEnd/                 # Código do ESP32
+│   ├── platformio.ini       # Configurações do PlatformIO
+│   ├── src/
+│   │   └── main.cpp         # Código principal do ESP32/ Lógica da aplicação
+│   ├── include/             # Headers personalizados
+│   ├── lib/                 # Bibliotecas locais
+│   └── test/                # Testes unitários
+└── FrontEnd/                # Interface Web
+    ├── index.html        # Esqueleto da página
+    ├── style.css         # Estilos da interface
+    └──script.js          # Página dinâmica
+```
+## 👥 Autores - Desenvolvimento inicial
 
-
-
-## 👥 Autores
-
-- **Antonio Augusto** - *Desenvolvimento inicial* - [@AntonioAugusto](https://github.com/AntonioAugustoo)
--** ** - *Desenvolvimento inicial* - [@](https://github.com/)
-
-## 📞 Suporte
-
-Para suporte técnico ou dúvidas:
-- 📧 Email: [eHealth@inatel.br]
-- 💬 Issues: [GitHub Issues](https://github.com/AntonioAugustoo/EMG_FACIAL/issues)
+- **Antonio Augusto** - *FrontEnd* - [@AntonioAugusto](https://github.com/AntonioAugustoo)
+- **Emily Horrana** - *BackEnd* - [@emyHorrana](https://github.com/emyHorrana)
 
 ## 🔗 Links Úteis
 
@@ -207,4 +175,4 @@ Para suporte técnico ou dúvidas:
 
 ---
 
-⚡ **Transformando sorrisos em dados, dados em conhecimento!** ⚡ 
+**Transformando sorrisos em dados, dados em conhecimento!**  

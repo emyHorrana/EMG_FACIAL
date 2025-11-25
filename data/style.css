@@ -206,6 +206,16 @@ body {
     font-size: 1.3rem;
 }
 
+#signalChart {
+    width: 100%;
+    height: auto;
+    max-width: 100%;
+    border: 2px solid var(--color-grey-medium);
+    border-radius: var(--border-radius-small);
+    background: white;
+    display: block;
+}
+
 .stat-card {
     background: white;
     padding: 20px;

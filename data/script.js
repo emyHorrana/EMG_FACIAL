@@ -13,7 +13,13 @@ const state = {
     isCapturing: false,
     startTime: null,
     sequenceInProgress: false,
-    activeTimers: []
+    activeTimers: [],
+    emgAnimation: {
+        time: 0,
+        noiseOffset: 0,
+        burstPhase: 0,
+        lastBurstTime: 0
+    }
 };addEventListener('DOMContentLoaded', () => {
     dom = {
         startBtn: document.getElementById('startBtn'),
@@ -42,6 +48,18 @@ const state = {
     dom.exportBtn.addEventListener('click', baixar);
     dom.clearBtn.addEventListener('click', limparRegistro);
     dom.modalStopBtn.addEventListener('click', pararCaptura);
+
+    // Iniciar animação EMG ao carregar a página
+    iniciarAnimacaoEMG();
+    
+    // Redimensionar gráfico quando a janela for redimensionada
+    window.addEventListener('resize', () => {
+        clearTimeout(window.resizeTimeout);
+        window.resizeTimeout = setTimeout(() => {
+            pararAnimacaoEMG();
+            iniciarAnimacaoEMG();
+        }, 250);
+    });
 
     setInterval(fetchData, config.DATA_FETCH_INTERVAL_MS);
 });
@@ -387,7 +405,248 @@ function safeSetTimeout(callback, delay) {
         callback();
     }, delay);
     state.activeTimers.push(id);
+}
+
+// Função para criar gráfico EMG dinâmico
+function criarGraficoEMGDinamico() {
+    const canvas = document.getElementById('signalChart');
+    const ctx = canvas.getContext('2d');
+    const container = canvas.parentElement;
+    
+    // Ajustar tamanho do canvas para ocupar quase todo o espaço disponível
+    const containerWidth = container.clientWidth - 40; // Margem interna
+    const containerHeight = Math.min(500, containerWidth * 0.6); // Altura maior para duas colunas
+    
+    canvas.width = containerWidth;
+    canvas.height = containerHeight;
+    
+    // Configurações do gráfico
+    const width = canvas.width;
+    const height = canvas.height;
+    const columnWidth = width / 2 - 30; // Largura de cada coluna
+    const leftColumnX = 20;
+    const rightColumnX = width / 2 + 10;
+    const centerY = height / 2;
+    const baseAmplitude = height * 0.15; // Amplitude base aumentada
+    const burstAmplitude = height * 0.35; // Amplitude para ativação muscular aumentada
+    const points = Math.floor(columnWidth / 2); // Densidade de pontos por coluna
+    
+    // Atualizar parâmetros de animação
+    state.emgAnimation.time += 0.02;
+    state.emgAnimation.noiseOffset += 0.01;
+    
+    // Verificar se deve criar uma "ativação muscular" (burst)
+    const currentTime = Date.now();
+    if (currentTime - state.emgAnimation.lastBurstTime > Math.random() * 3000 + 2000) {
+        state.emgAnimation.lastBurstTime = currentTime;
+        state.emgAnimation.burstPhase = 0;
+    }
+    
+    // Limpar canvas
+    ctx.clearRect(0, 0, width, height);
+    
+    // Desenhar fundo das colunas
+    ctx.fillStyle = '#f8f9fa';
+    ctx.fillRect(leftColumnX, 50, columnWidth, height - 100);
+    ctx.fillRect(rightColumnX, 50, columnWidth, height - 100);
+    
+    // Desenhar bordas das colunas
+    ctx.strokeStyle = '#dee2e6';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(leftColumnX, 50, columnWidth, height - 100);
+    ctx.strokeRect(rightColumnX, 50, columnWidth, height - 100);
+    
+    // Títulos das colunas
+    ctx.fillStyle = '#2c3e50';
+    ctx.font = 'bold 18px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('Sinal Bruto', leftColumnX + columnWidth / 2, 35);
+    ctx.fillText('Sinal Filtrado', rightColumnX + columnWidth / 2, 35);
+    
+    // Desenhar grades internas
+    desenharGradeColuna(ctx, leftColumnX, 50, columnWidth, height - 100);
+    desenharGradeColuna(ctx, rightColumnX, 50, columnWidth, height - 100);
+    
+    // Desenhar eixos centrais
+    ctx.strokeStyle = '#6c757d';
+    ctx.lineWidth = 1;
+    // Linha central coluna esquerda
+    ctx.beginPath();
+    ctx.moveTo(leftColumnX, centerY);
+    ctx.lineTo(leftColumnX + columnWidth, centerY);
+    ctx.stroke();
+    // Linha central coluna direita
+    ctx.beginPath();
+    ctx.moveTo(rightColumnX, centerY);
+    ctx.lineTo(rightColumnX + columnWidth, centerY);
+    ctx.stroke();
+    
+    // === SINAL BRUTO (Coluna Esquerda) ===
+    ctx.strokeStyle = '#e74c3c'; // Vermelho para sinal bruto
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    
+    ctx.beginPath();
+    for (let i = 0; i < points; i++) {
+        const x = leftColumnX + (i / points) * columnWidth;
+        const timeOffset = (i / points) * 8 + state.emgAnimation.time;
+        
+        // Sinal bruto com muito ruído
+        const baseNoise = (Math.random() - 0.5) * baseAmplitude * 0.8;
+        const highFreqNoise = Math.sin(timeOffset * 80 + state.emgAnimation.noiseOffset) * baseAmplitude * 0.6;
+        const lowFreqSignal = Math.sin(timeOffset * 3) * baseAmplitude * 0.5;
+        
+        // Ativação muscular
+        let burstSignal = 0;
+        if (state.emgAnimation.burstPhase < Math.PI) {
+            const burstIntensity = Math.sin(state.emgAnimation.burstPhase);
+            const burstFreq = 40 + Math.random() * 30;
+            burstSignal = Math.sin(timeOffset * burstFreq) * burstAmplitude * burstIntensity;
+            state.emgAnimation.burstPhase += 0.08;
+        }
+        
+        // Ruído adicional para sinal bruto
+        const additionalNoise = (Math.random() - 0.5) * baseAmplitude * 0.4;
+        
+        let totalSignal = baseNoise + highFreqNoise + lowFreqSignal + burstSignal + additionalNoise;
+        const y = centerY - totalSignal;
+        
+        if (i === 0) {
+            ctx.moveTo(x, y);
+        } else {
+            ctx.lineTo(x, y);
+        }
+    }
+    ctx.stroke();
+    
+    // === SINAL FILTRADO (Coluna Direita) ===
+    ctx.strokeStyle = '#27ae60'; // Verde para sinal filtrado
+    ctx.lineWidth = 2.5;
+    
+    ctx.beginPath();
+    for (let i = 0; i < points; i++) {
+        const x = rightColumnX + (i / points) * columnWidth;
+        const timeOffset = (i / points) * 8 + state.emgAnimation.time;
+        
+        // Sinal filtrado - menos ruído, mais suave
+        const baseNoise = (Math.random() - 0.5) * baseAmplitude * 0.2; // Ruído reduzido
+        const lowFreqSignal = Math.sin(timeOffset * 2.5) * baseAmplitude * 0.3;
+        
+        // Ativação muscular filtrada
+        let burstSignal = 0;
+        if (state.emgAnimation.burstPhase < Math.PI) {
+            const burstIntensity = Math.sin(state.emgAnimation.burstPhase);
+            const burstFreq = 35; // Frequência mais consistente
+            burstSignal = Math.sin(timeOffset * burstFreq) * burstAmplitude * burstIntensity * 0.9;
+        }
+        
+        let totalSignal = baseNoise + lowFreqSignal + burstSignal;
+        const y = centerY - totalSignal;
+        
+        if (i === 0) {
+            ctx.moveTo(x, y);
+        } else {
+            ctx.lineTo(x, y);
+        }
+    }
+    ctx.stroke();
+    
+    // Indicador de atividade
+    if (state.emgAnimation.burstPhase > 0 && state.emgAnimation.burstPhase < Math.PI) {
+        // Destacar área de atividade em ambas as colunas
+        ctx.fillStyle = 'rgba(255, 193, 7, 0.2)';
+        ctx.fillRect(leftColumnX, centerY - burstAmplitude, columnWidth, burstAmplitude * 2);
+        ctx.fillRect(rightColumnX, centerY - burstAmplitude, columnWidth, burstAmplitude * 2);
+        
+        // Texto indicativo
+        ctx.fillStyle = '#f39c12';
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('⚡ ATIVIDADE MUSCULAR DETECTADA ⚡', width / 2, height - 15);
+    }
+    
+    // Adicionar labels dos eixos
+    adicionarLabelsEMG(ctx, width, height, centerY, leftColumnX, rightColumnX, columnWidth);
+}
+
+// Função para iniciar animação EMG
+function iniciarAnimacaoEMG() {
+    function animate() {
+        criarGraficoEMGDinamico();
+        state.emgAnimation.animationId = requestAnimationFrame(animate);
+    }
+    animate();
+}
+
+// Função para parar animação EMG
+function pararAnimacaoEMG() {
+    if (state.emgAnimation.animationId) {
+        cancelAnimationFrame(state.emgAnimation.animationId);
+        state.emgAnimation.animationId = null;
+    }
+}
 
 
-    //teste de commit para ver se funciona o push 
+
+// Função para desenhar grade de uma coluna
+function desenharGradeColuna(ctx, x, y, width, height) {
+    ctx.strokeStyle = '#e9ecef';
+    ctx.lineWidth = 0.5;
+    
+    // Linhas horizontais
+    for (let i = 1; i < 8; i++) {
+        const lineY = y + (i / 8) * height;
+        ctx.beginPath();
+        ctx.moveTo(x, lineY);
+        ctx.lineTo(x + width, lineY);
+        ctx.stroke();
+    }
+    
+    // Linhas verticais
+    for (let i = 1; i < 6; i++) {
+        const lineX = x + (i / 6) * width;
+        ctx.beginPath();
+        ctx.moveTo(lineX, y);
+        ctx.lineTo(lineX, y + height);
+        ctx.stroke();
+    }
+}
+
+// Função para adicionar labels EMG
+function adicionarLabelsEMG(ctx, width, height, centerY, leftColumnX, rightColumnX, columnWidth) {
+    ctx.fillStyle = '#495057';
+    ctx.font = '12px Arial';
+    
+    // Labels do eixo Y para coluna esquerda
+    ctx.textAlign = 'right';
+    const amplitude = height * 0.35;
+    ctx.fillText('1000µV', leftColumnX - 5, centerY - amplitude);
+    ctx.fillText('0µV', leftColumnX - 5, centerY + 5);
+    ctx.fillText('-1000µV', leftColumnX - 5, centerY + amplitude);
+    
+    // Labels do eixo Y para coluna direita
+    ctx.fillText('1000µV', rightColumnX - 5, centerY - amplitude);
+    ctx.fillText('0µV', rightColumnX - 5, centerY + 5);
+    ctx.fillText('-1000µV', rightColumnX - 5, centerY + amplitude);
+    
+    // Labels do eixo X (tempo) - coluna esquerda
+    ctx.textAlign = 'center';
+    ctx.fillText('0', leftColumnX, height - 30);
+    ctx.fillText('500ms', leftColumnX + columnWidth/2, height - 30);
+    ctx.fillText('1000ms', leftColumnX + columnWidth, height - 30);
+    
+    // Labels do eixo X (tempo) - coluna direita
+    ctx.fillText('0', rightColumnX, height - 30);
+    ctx.fillText('500ms', rightColumnX + columnWidth/2, height - 30);
+    ctx.fillText('1000ms', rightColumnX + columnWidth, height - 30);
+    
+    // Legendas das cores
+    ctx.font = 'bold 14px Arial';
+    ctx.fillStyle = '#e74c3c';
+    ctx.textAlign = 'left';
+    ctx.fillText('● Sinal com ruído', leftColumnX, height - 10);
+    
+    ctx.fillStyle = '#27ae60';
+    ctx.fillText('● Sinal limpo', rightColumnX, height - 10);
 }

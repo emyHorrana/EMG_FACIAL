@@ -1,393 +1,274 @@
 let dom = {};
-
 const config = {
-    PREPARATION_TIME_MS: 2000,
-    COUNTDOWN_STEP_MS: 1000,
-    EXPRESSION_DURATION_S: 5,
-    PROGRESS_INTERVAL_MS: 100,
-    DATA_FETCH_INTERVAL_MS: 1000,
+    DATA_FETCH_INTERVAL_MS: 500,
+    MAX_DATA_POINTS: 300,
     TOAST_DURATION_MS: 3000,
 };
 
 const state = {
-    isCapturing: false,
+    isMonitoring: false,
     startTime: null,
-    sequenceInProgress: false,
-    activeTimers: []
-};addEventListener('DOMContentLoaded', () => {
+    realTimeData: [],
+    savedFiles: [],
+    statistics: { maxAmplitude: -Infinity, minAmplitude: Infinity, currentAmplitude: 0, avgFrequency: 0, totalSamples: 0, lastAmplitude: 0 },
+    intervals: {}
+};
+
+addEventListener('DOMContentLoaded', () => {
     dom = {
         startBtn: document.getElementById('startBtn'),
-        exportBtn: document.getElementById('exportBtn'),
+        stopBtn: document.getElementById('stopBtn'),
         clearBtn: document.getElementById('clearBtn'),
-        modalStopBtn: document.getElementById('modalStopBtn'),
-        status: document.getElementById('status'),
-        captureModal: document.getElementById('captureModal'),
-        stageEmoji: document.getElementById('stageEmoji'),
-        stageText: document.getElementById('stageText'),
-        countdown: document.getElementById('countdown'),
-        progressContainer: document.getElementById('progressContainer'),
-        progressFill: document.getElementById('progressFill'),
-        progressText: document.getElementById('progressText'),
-        modalControls: document.getElementById('modalControls'),
         toast: document.getElementById('toast'),
-        csvArea: document.getElementById('csvArea'),
+        fileHistoryBody: document.getElementById('fileHistoryBody'),
         dataTableBody: document.getElementById('dataTableBody'),
         currentAmplitude: document.getElementById('currentAmplitude'),
         avgFrequency: document.getElementById('avgFrequency'),
-        sampleCount: document.getElementById('sampleCount'),
         recordingTime: document.getElementById('recordingTime'),
+        signalChart: document.getElementById('signalChart'),
+        saveModal: document.getElementById('saveModal'),
+        btnNo: document.getElementById('btnNo'),
+        btnYes: document.getElementById('btnYes'),
+        btnSave: document.getElementById('btnSave'),
+        fileName: document.getElementById('fileName'),
+        inputGroup: document.getElementById('inputGroup'),
+        modalBody: document.getElementById('modalBody'),
     };
 
-    dom.startBtn.addEventListener('click', iniciarSequencia);
-    dom.exportBtn.addEventListener('click', baixar);
-    dom.clearBtn.addEventListener('click', limparRegistro);
-    dom.modalStopBtn.addEventListener('click', pararCaptura);
+    dom.startBtn.addEventListener('click', iniciarMonitoramento);
+    dom.stopBtn.addEventListener('click', pararESalvar);
+    dom.clearBtn.addEventListener('click', limparDados);
+    dom.btnNo.addEventListener('click', fecharModal);
+    dom.btnYes.addEventListener('click', mostrarInputNome);
+    dom.btnSave.addEventListener('click', salvarArquivo);
+    dom.saveModal.addEventListener('click', (e) => {
+        if (e.target === dom.saveModal) fecharModal();
+    });
 
-    setInterval(fetchData, config.DATA_FETCH_INTERVAL_MS);
+    redimensionarCanvas();
+    window.addEventListener('resize', () => {
+        clearTimeout(window.resizeTimeout);
+        window.resizeTimeout = setTimeout(redimensionarCanvas, 200);
+    });
+    requestAnimationFrame(animarGrafico);
 });
 
-// Funções utilitárias para timestamp
-function formatarTimestamp(timestampValue) {
-    let dataObj;
-    
-    if (!timestampValue || isNaN(parseInt(timestampValue))) {
-        dataObj = new Date();
-    } else {
-        const timestamp = parseInt(timestampValue, 10);
-        
-        if (timestamp < 1000000000000) {
-            dataObj = new Date(timestamp * 1000);
-        } else {
-            dataObj = new Date(timestamp);
-        }
-        
-        if (isNaN(dataObj.getTime())) {
-            dataObj = new Date();
-        }
-    }
-    
-    return dataObj.toLocaleString('pt-BR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-    });
-}
-
-function gerarTimestampArquivo() {
-    return new Date().toISOString().replace(/[:.]/g, '-');
-}
-
-function iniciarSequencia() {
-    if (state.isCapturing || state.sequenceInProgress) return;
-    state.sequenceInProgress = true;
-    dom.startBtn.disabled = true;
-    dom.captureModal.style.display = 'flex';
-    sequenciaPreparacao();
-}
-
-function pararCaptura() {
-    state.isCapturing = false;
-    state.sequenceInProgress = false;
-    clearAllTimers();
-    dom.captureModal.style.display = 'none';
-    dom.modalControls.style.display = 'none';
-    dom.startBtn.disabled = false;
-    dom.status.className = 'status stopped';
-    dom.status.innerHTML = '<div class="pulse"></div>Captura Interrompida';
-    fetch('/stop').then(res => res.text()).then(console.log);
-    safeSetTimeout(() => {
-        if (!state.sequenceInProgress) {
-            dom.status.innerHTML = '<div class="pulse"></div>Parado';
-        }
-    }, config.TOAST_DURATION_MS);
-}
-
-function sequenciaPreparacao() {
-    dom.captureModal.className = 'capture-modal stage-preparacao';
-    dom.stageEmoji.textContent = '🎯';
-    dom.stageText.textContent = 'Prepare-se';
-    dom.countdown.textContent = '';
-    safeSetTimeout(() => { if (state.sequenceInProgress) sequenciaContagem(); }, config.PREPARATION_TIME_MS);
-}
-
-function sequenciaContagem() {
-    dom.captureModal.className = 'capture-modal stage-contagem';
-    dom.stageEmoji.textContent = '⏰';
-    dom.stageText.textContent = 'Iniciando em...';
-    let count = 3;
-    function showCount() {
-        if (!state.sequenceInProgress) return;
-        dom.countdown.textContent = count;
-        dom.countdown.style.animation = 'none';
-        void dom.countdown.offsetHeight;
-        dom.countdown.style.animation = 'pulse-number 1s ease-in-out';
-        if (count > 1) {
-            count--;
-            safeSetTimeout(showCount, config.COUNTDOWN_STEP_MS);
-        } else {
-            safeSetTimeout(() => { if (state.sequenceInProgress) sequenciaExpressaoSeria(); }, config.COUNTDOWN_STEP_MS);
-        }
-    }
-    showCount();
-}
-
-function sequenciaExpressaoSeria() {
-    dom.captureModal.className = 'capture-modal stage-seria';
-    dom.stageEmoji.textContent = '😐';
-    dom.stageText.textContent = 'Faça uma expressão séria';
-    dom.countdown.textContent = '';
-    dom.progressContainer.style.display = 'none';
-    state.isCapturing = true;
+function iniciarMonitoramento() {
+    if (state.isMonitoring) return;
+    state.isMonitoring = true;
     state.startTime = Date.now();
-    fetch('/start').then(res => res.text()).then(console.log);
-    dom.status.className = 'status recording';
-    dom.status.innerHTML = '<div class="pulse"></div>Preparando - Expressão Séria';
-    safeSetTimeout(() => {
-        if (state.sequenceInProgress) iniciarContagemExpressao('Expressão Séria', sequenciaExpressaoSorriso);
-    }, config.PREPARATION_TIME_MS);
-}
-
-function sequenciaExpressaoSorriso() {
-    dom.captureModal.className = 'capture-modal stage-sorriso';
-    dom.stageEmoji.textContent = '😊';
-    dom.stageText.textContent = 'Pronto para sorrir?';
-    dom.progressContainer.style.display = 'none';
-    dom.status.innerHTML = '<div class="pulse"></div>Preparando - Sorriso';
-    safeSetTimeout(() => {
-        if (state.sequenceInProgress) iniciarContagemExpressao('Faça um Sorriso!', sequenciaSucesso);
-    }, config.PREPARATION_TIME_MS);
-}
-
-function iniciarContagemExpressao(texto, proximaEtapa) {
-    dom.stageText.textContent = texto;
-    dom.progressContainer.style.display = 'block';
-    dom.modalControls.style.display = 'block';
-    dom.status.innerHTML = `<div class="pulse"></div>Gravando - ${texto}`;
-    dom.progressFill.style.width = '0%';
-    dom.progressText.textContent = '0s';
-    let progress = 0;
-    const totalSteps = config.EXPRESSION_DURATION_S * (1000 / config.PROGRESS_INTERVAL_MS);
-    const progressIncrement = 100 / totalSteps;
-    const intervalId = setInterval(() => {
-        if (!state.sequenceInProgress) return clearInterval(intervalId);
-        progress += progressIncrement;
-        dom.progressFill.style.width = `${progress}%`;
-        dom.progressText.textContent = `${Math.ceil(progress / (100 / config.EXPRESSION_DURATION_S))}s`;
-        if (progress >= 100) {
-            clearInterval(intervalId);
-            safeSetTimeout(() => { if (state.sequenceInProgress) proximaEtapa(); }, 500);
-        }
-    }, config.PROGRESS_INTERVAL_MS);
-    state.activeTimers.push(intervalId);
-}
-
-function sequenciaSucesso() {
-    dom.captureModal.className = 'capture-modal stage-sucesso';
-    dom.stageEmoji.textContent = '🎉';
-    dom.stageText.textContent = 'Sucesso!';
-    dom.countdown.textContent = 'Captura Finalizada';
-    dom.progressContainer.style.display = 'none';
-    dom.modalControls.style.display = 'none';
-    state.isCapturing = false;
-    fetch('/stop').then(res => res.text()).then(console.log);
-    dom.status.className = 'status stopped';
-    dom.status.innerHTML = '<div class="pulse"></div>Captura Concluída';
-    safeSetTimeout(() => {
-        if (!state.sequenceInProgress) return;
-        dom.captureModal.style.display = 'none';
-        dom.startBtn.disabled = false;
-        state.sequenceInProgress = false;
-        dom.status.innerHTML = '<div class="pulse"></div>Parado';
-        mostrarToast('Captura realizada com sucesso!');
-    }, config.TOAST_DURATION_MS);
-}
-
-function fetchData() {
-    if (state.isCapturing) {
-        fetch('/data')
-            .then(response => response.text())
-            .then(data => {
-                if (data && data.trim() !== '') {
-                    const processedData = processarDadosComTimestamp(data);
-                    dom.csvArea.value = processedData;
-                    atualizarEstatisticas(processedData);
-                }
-            })
-            .catch(error => console.error('Erro ao buscar dados:', error));
-    }
-}
-
-function processarDadosComTimestamp(csvData) {
-    const lines = csvData.trim().split('\n');
-    const currentTimestamp = Date.now();
+    state.realTimeData = [];
+    state.statistics = { maxAmplitude: -Infinity, minAmplitude: Infinity, currentAmplitude: 0, avgFrequency: 0, totalSamples: 0, lastAmplitude: 0 };
     
-    const processedLines = lines.map((line, index) => {
-        if (line.includes('Timestamp') || !line.includes(',')) {
-            return line;
-        }
-        
-        const data = line.split(',');
-        if (data.length < 2) return line;
+    atualizarUI(true);
+    mostrarToast('✨ CAPTURANDO SORRISOS!');
+    fetch('/start').catch(e => console.log("Simulação (Backend offline)"));
 
-        if (!data[0] || isNaN(parseInt(data[0]))) {
-            const timestamp = Math.floor((currentTimestamp + (index * 100)) / 1000);
-            data[0] = timestamp.toString();
-            return data.join(',');
+    state.intervals.fetch = setInterval(buscarDadosRealTime, config.DATA_FETCH_INTERVAL_MS);
+    state.intervals.timer = setInterval(atualizarCronometro, 1000);
+}
+
+function pararESalvar() {
+    if (!state.isMonitoring) return;
+    state.isMonitoring = false;
+    clearInterval(state.intervals.fetch);
+    clearInterval(state.intervals.timer);
+    fetch('/stop').catch(e => {});
+    
+    atualizarUI(false);
+
+    setTimeout(() => {
+        if (state.realTimeData.length === 0) {
+            mostrarToast('Nenhum dado capturado.');
+            return;
         }
+        abrirModal();
+    }, 100);
+}
+
+function abrirModal() {
+    dom.saveModal.classList.add('show');
+    dom.inputGroup.classList.add('hidden');
+    dom.modalBody.querySelector('.modal-question').style.display = 'block';
+    dom.modalBody.querySelector('.modal-buttons').style.display = 'flex';
+    dom.fileName.value = `Smile_${new Date().getHours()}h${new Date().getMinutes()}`;
+}
+
+function fecharModal() {
+    dom.saveModal.classList.remove('show');
+}
+
+function mostrarInputNome() {
+    dom.modalBody.querySelector('.modal-question').style.display = 'none';
+    dom.modalBody.querySelector('.modal-buttons').style.display = 'none';
+    dom.inputGroup.classList.remove('hidden');
+    dom.fileName.focus();
+}
+
+function salvarArquivo() {
+    const nomeArquivo = dom.fileName.value.trim();
+    if (!nomeArquivo) {
+        mostrarToast('⚠️ Digite um nome para o arquivo!');
+        return;
+    }
+    gerarEExportarCSV(nomeArquivo);
+    fecharModal();
+}
+
+function buscarDadosRealTime() {
+    fetch('/data').then(res => res.text()).then(data => processarLoteDados(data)).catch(err => {});
+}
+
+function processarLoteDados(csvData) {
+    if (!csvData || !csvData.trim()) return;
+    const lines = csvData.trim().split('\n').filter(line => line.includes(',') && !line.includes('Timestamp'));
+    if (lines.length === 0) return;
+
+    lines.forEach(line => {
+        const [ts, ampStr, freqStr] = line.split(',');
+        const amplitude = parseFloat(ampStr) || 0;
+        const frequency = parseFloat(freqStr) || 0;
+        const timestamp = parseInt(ts) || Date.now();
+
+        state.realTimeData.push({ timestamp, amplitude, frequency, dateObj: new Date(timestamp * 1000) });
         
-        return line;
+        state.statistics.currentAmplitude = amplitude;
+        state.statistics.totalSamples++;
+        state.statistics.avgFrequency = (state.statistics.avgFrequency + frequency) / 2;
     });
+
+    if (state.realTimeData.length > config.MAX_DATA_POINTS) state.realTimeData = state.realTimeData.slice(-config.MAX_DATA_POINTS);
     
-    return processedLines.join('\n');
+    const highlightClass = state.statistics.currentAmplitude > 0.5 ? 'style="color:#FFD700; text-shadow:0 0 15px #FFD700;"' : '';
+    dom.currentAmplitude.innerHTML = `<span ${highlightClass}>${state.statistics.currentAmplitude.toFixed(2)}</span> <span class="unit">mV</span>`;
+    dom.avgFrequency.innerHTML = `${state.statistics.avgFrequency.toFixed(1)} <span class="unit">Hz</span>`;
+    
+    const ultimos = state.realTimeData.slice(-4).reverse();
+    dom.dataTableBody.innerHTML = ultimos.map(d => `
+        <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid rgba(255,255,255,0.05); font-size:0.85rem; font-family:monospace;">
+            <span style="color:#9ca3af">${d.dateObj.toLocaleTimeString()}</span>
+            <span style="color:${d.amplitude > 0.5 ? '#FFD700' : '#fff'}; font-weight:${d.amplitude > 0.5 ? 'bold' : 'normal'}">${d.amplitude.toFixed(2)} mV</span>
+        </div>
+    `).join('');
 }
 
-function atualizarEstatisticas(csvData) {
-    const lines = csvData.trim().split('\n');
-    const dataLines = lines.filter(line => line.includes(',') && !line.includes('Timestamp'));
-    if (dataLines.length === 0) return;
-    dom.sampleCount.textContent = dataLines.length;
-    if (state.startTime) {
-        const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
-        const mins = Math.floor(elapsed / 60);
-        const secs = elapsed % 60;
-        dom.recordingTime.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-    }
-    const lastLine = dataLines[dataLines.length - 1].split(',');
-    if (lastLine.length >= 2) dom.currentAmplitude.textContent = `${lastLine[1]} mV`;
-    if (lastLine.length >= 3) {
-        const frequencies = dataLines.map(line => parseFloat(line.split(',')[2]) || 0);
-        const avgFreq = frequencies.reduce((a, b) => a + b, 0) / frequencies.length;
-        dom.avgFrequency.textContent = `${avgFreq.toFixed(1)} Hz`;
-    }
-    atualizarTabela(dataLines);
-}
-
-function atualizarTabela(dataLines) {
-    const recentLines = dataLines.slice(-10);
-    dom.dataTableBody.innerHTML = '';
-    
-    recentLines.forEach(line => {
-        const data = line.split(',');
-        if (data.length < 3) return;
-
-        const row = dom.dataTableBody.insertRow();
-        const cellTime = row.insertCell(0);
-        
-        cellTime.textContent = formatarTimestamp(data[0]);
-        
-        const amplitude = parseFloat(data[1]);
-        const cellAmp = row.insertCell(1);
-        cellAmp.textContent = `${data[1]} mV`;
-        cellAmp.className = amplitude >= 0 ? 'amplitude-positive' : 'amplitude-negative';
-        
-        row.insertCell(2).textContent = `${data[2]} Hz`;
-        
-        const quality = Math.abs(amplitude) > 0.1 ? 'Boa' : 'Baixa';
-        const cellQuality = row.insertCell(3);
-        cellQuality.textContent = quality;
-        cellQuality.style.color = quality === 'Boa' ? '#27ae60' : '#f39c12';
-        
-        const cellExport = row.insertCell(4);
-        const exportBtn = document.createElement('button');
-        exportBtn.className = 'btn-export';
-        exportBtn.innerHTML = '💾 Baixar';
-        exportBtn.addEventListener('click', () => exportarLinha(line));
-        cellExport.appendChild(exportBtn);
-    });
-}
-
-function limparRegistro() {
-    dom.dataTableBody.innerHTML = '';
-    dom.currentAmplitude.textContent = '0.00 mV';
-    dom.avgFrequency.textContent = '0.0 Hz';
-    dom.sampleCount.textContent = '0';
-    dom.recordingTime.textContent = '00:00';
-    mostrarToast('Registro limpo com sucesso!');
-}
-
-function exportarLinha(linhaDados) {
-    const header = 'Data e Hora,Amplitude (mV),Frequência (Hz),Qualidade\n';
-    const data = linhaDados.split(',');
-    if (data.length < 3) return;
-    
-    const timestampFormatado = formatarTimestamp(data[0]);
-    const amplitude = parseFloat(data[1]);
-    const quality = Math.abs(amplitude) > 0.1 ? 'Boa' : 'Baixa';
-    const csvLine = `${timestampFormatado},${data[1]} mV,${data[2]} Hz,${quality}\n`;
-    
-    const nomeArquivo = `emg_linha_${gerarTimestampArquivo()}.csv`;
-    baixarArquivo(header + csvLine, nomeArquivo);
-    mostrarToast(`Linha exportada: ${nomeArquivo}`);
-}
-
-function baixar() {
-    if (!dom.csvArea.value || dom.csvArea.value.trim() === '') {
-        return mostrarToast('Nenhum dado para exportar!');
-    }
-    
-    const lines = dom.csvArea.value.trim().split('\n');
-    const dataLines = lines.filter(line => line.includes(',') && !line.includes('Timestamp'));
-    
-    const header = 'Data e Hora,Amplitude (mV),Frequência (Hz),Qualidade,Timestamp Original\n';
-    
-    const processedLines = dataLines.map(line => {
-        const data = line.split(',');
-        if (data.length < 3) return null;
-        
-        const timestampFormatado = formatarTimestamp(data[0]);
-        const amplitude = parseFloat(data[1]);
-        const quality = Math.abs(amplitude) > 0.1 ? 'Boa' : 'Baixa';
-        
-        return `${timestampFormatado},${data[1]} mV,${data[2]} Hz,${quality},${data[0]}`;
-    }).filter(line => line !== null);
-    
-    const csvContent = header + processedLines.join('\n') + '\n';
-    
-    const nomeArquivo = `emg_facial_${gerarTimestampArquivo()}.csv`;
-    baixarArquivo(csvContent, nomeArquivo);
-    mostrarToast(`${processedLines.length} registros exportados: ${nomeArquivo}`);
-}
-
-function baixarArquivo(content, fileName) {
-    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+function gerarEExportarCSV(nomeUsuario) {
+    const fileName = `${nomeUsuario.replace(/[^a-z0-9]/gi, '_')}.csv`;
+    const header = 'Timestamp,DataHora,Amplitude(mV),Frequencia(Hz)\n';
+    const rows = state.realTimeData.map(d => `${d.timestamp},${d.dateObj.toISOString()},${d.amplitude.toFixed(4)},${d.frequency.toFixed(2)}`).join('\n');
+    const blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+
+    state.savedFiles.unshift({ nome: fileName, hora: new Date().toLocaleTimeString(), urlBlob: url, dados: state.realTimeData.slice() });
+    renderizarHistorico();
+    mostrarToast(`ARQUIVO SALVO: ${fileName}`);
 }
 
-function mostrarToast(mensagem) {
-    dom.toast.textContent = mensagem;
-    dom.toast.style.display = 'block';
-    dom.toast.style.opacity = '1';
-    safeSetTimeout(() => {
-        dom.toast.style.opacity = '0';
-        safeSetTimeout(() => { dom.toast.style.display = 'none'; }, 400);
-    }, config.TOAST_DURATION_MS);
+function renderizarHistorico() {
+    const tbody = dom.fileHistoryBody;
+    if (state.savedFiles.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="empty">Vamos capturar alguns sorrisos?</td></tr>';
+        return;
+    }
+    tbody.innerHTML = state.savedFiles.map((f, index) => `
+        <tr>
+            <td>${f.nome}</td>
+            <td style="color:#9ca3af">${f.hora}</td>
+            <td><button onclick="baixarArquivo(${index})" class="download-link">BAIXAR</button></td>
+        </tr>
+    `).join('');
 }
 
-function clearAllTimers() {
-    state.activeTimers.forEach(id => {
-        clearTimeout(id);
-        clearInterval(id);
+function baixarArquivo(index) {
+    const arquivo = state.savedFiles[index];
+    if (!arquivo) return;
+    
+    const link = document.createElement('a');
+    link.href = arquivo.urlBlob;
+    link.download = arquivo.nome;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    mostrarToast(`📥 Download: ${arquivo.nome}`);
+}
+
+function redimensionarCanvas() {
+    const container = dom.signalChart.parentElement;
+    dom.signalChart.width = container.clientWidth;
+    dom.signalChart.height = container.clientHeight - 50;
+}
+
+function animarGrafico() {
+    const ctx = dom.signalChart.getContext('2d');
+    const w = dom.signalChart.width;
+    const h = dom.signalChart.height;
+    const cy = h / 2;
+
+    ctx.clearRect(0, 0, w, h);
+    
+    ctx.strokeStyle = 'rgba(255, 215, 0, 0.1)';
+    ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(w, cy); ctx.stroke();
+
+    if (state.realTimeData.length < 2) {
+        requestAnimationFrame(animarGrafico); return;
+    }
+
+    ctx.beginPath();
+    const data = state.realTimeData;
+    const maxVal = 2.5;
+    const scaleY = (h / 2) / maxVal;
+    const stepX = w / (config.MAX_DATA_POINTS - 1);
+
+    const gradient = ctx.createLinearGradient(0, 0, w, 0);
+    gradient.addColorStop(0, '#FFD700');
+    gradient.addColorStop(1, '#FF8C00');
+
+    ctx.strokeStyle = gradient;
+    ctx.lineWidth = 3;
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = 'rgba(255, 215, 0, 0.5)';
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    data.forEach((pt, i) => {
+        const x = i * stepX;
+        const y = cy - (pt.amplitude * scaleY);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     });
-    state.activeTimers = [];
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    requestAnimationFrame(animarGrafico);
 }
 
-function safeSetTimeout(callback, delay) {
-    const id = setTimeout(() => {
-        state.activeTimers = state.activeTimers.filter(timerId => timerId !== id);
-        callback();
-    }, delay);
-    state.activeTimers.push(id);
+function atualizarUI(isRecording) {
+    if (isRecording) {
+        dom.startBtn.classList.add('hidden');
+        dom.stopBtn.classList.remove('hidden');
+    } else {
+        dom.startBtn.classList.remove('hidden');
+        dom.stopBtn.classList.add('hidden');
+    }
+}
 
+function atualizarCronometro() {
+    if (!state.startTime) return;
+    const diff = Math.floor((Date.now() - state.startTime) / 1000);
+    const m = Math.floor(diff / 60).toString().padStart(2,'0');
+    const s = (diff % 60).toString().padStart(2,'0');
+    dom.recordingTime.textContent = `00:${m}:${s}`;
+}
 
-    //teste de commit para ver se funciona o push 
+function limparDados() {
+    state.realTimeData = [];
+    state.savedFiles = [];
+    dom.dataTableBody.innerHTML = '';
+    renderizarHistorico();
+}
+
+function mostrarToast(msg) {
+    dom.toast.textContent = msg;
+    dom.toast.classList.add('show');
+    setTimeout(() => dom.toast.classList.remove('show'), 3000);
 }

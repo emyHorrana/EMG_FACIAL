@@ -135,11 +135,13 @@ void handleData() {
 }
 
 // -------------------- CONFIGURAÇÃO INICIAL --------------------
+
 void setup() {
-  Serial.begin(115200);   // Inicializa comunicação serial para depuração
+  
+  Serial.begin(115200);  
+  analogSetAttenuation(ADC_11db); //Ajusta a atenuação do ADC para maior faixa de leitura
   delay(1000);
 
-  // Inicializa o sistema de arquivos interno
   if (!LittleFS.begin()) {
     Serial.println("Erro ao montar LittleFS!");
     return;
@@ -180,7 +182,6 @@ void setup() {
 
   server.begin();
   Serial.println("Servidor HTTP iniciado");
-  Serial.println("Servidor HTTP iniciado");
 }
 
 // -------------------- LOOP PRINCIPAL --------------------
@@ -217,8 +218,7 @@ void loop() {
                    String(bufferSignalFiltrado[i]) + "\n";
       }
       recording = false;
-      Serial.println("Captura finalizada!");
-      Serial.println("Captura finalizada!");
+      Serial.println("Captura finalizada! Usando atenuação de 3.3");
     }
   }
 }

@@ -7,9 +7,7 @@ const config = {
     MAX_ADC_VALUE: 4095, 
     
     // --- Configurações de Escala do Gráfico ---
-    // NOVO VALOR: 500 ADC significa que 500 ADC preencherá toda a altura do gráfico.
-    // Isso aplica um zoom de 4095 / 500 ≈ 8x.
-    VISUAL_Y_MAX: 500, 
+    VISUAL_Y_MAX: 4200, 
     
     VISUAL_X_MAX_S: 3,  
 };
@@ -174,7 +172,7 @@ function desenharSinal(ctx, data, property, color, isFiltered = false) {
             y_mapped = h;
         }
         
-        // Mapeamento: Inverte o eixo Y (ADC alto = Y baixo/topo do canvas)
+        
         const y = h - y_mapped;
 
         if (i === 0) {
@@ -185,24 +183,24 @@ function desenharSinal(ctx, data, property, color, isFiltered = false) {
     });
     
     ctx.stroke();
-    ctx.shadowBlur = 0; // Limpa a sombra
+    ctx.shadowBlur = 0; 
 }
 
 function desenharEixos(ctx, w, h) {
     const divisiones = 5;
     
     ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)'; 
     ctx.font = '10px Quicksand';
     
-    // --- GRADES HORIZONTAIS e RÓTULOS ADC ---
+    // --- EIXO Y (AMPLITUDE) ---
     ctx.textAlign = 'right';
     const VISUAL_Y_MAX = config.VISUAL_Y_MAX;
     
     for (let i = 0; i <= divisiones; i++) {
         const y_pos = (h / divisiones) * i;
         
-        // Linha de grade
+        // Linha de grade horizontal
         ctx.beginPath();
         ctx.moveTo(0, y_pos);
         ctx.lineTo(w, y_pos);
@@ -210,16 +208,24 @@ function desenharEixos(ctx, w, h) {
 
         // Rótulo ADC
         const adc_value = Math.round(VISUAL_Y_MAX - (VISUAL_Y_MAX / divisiones) * i);
-        ctx.fillText(`${adc_value} ADC`, w - 5, y_pos - 2);
+        if (i < divisiones) { 
+            ctx.fillText(`${adc_value}`, w - 5, y_pos + 10); 
+        }
     }
     
-    // --- GRADES VERTICAIS e RÓTULOS DE TEMPO (Segundos) ---
+    // --- EIXO X (TEMPO DINÂMICO) ---
     ctx.textAlign = 'center';
-    const totalPoints = config.MAX_DATA_POINTS;
-    const timeStep = config.VISUAL_X_MAX_S / divisiones; // Tempo por divisão
     
-    for (let i = 0; i < totalPoints; i += totalPoints / divisiones) {
-        const x_pos = (w / totalPoints) * i;
+    // Pegamos o último dado (mais recente) para calcular o tempo atual
+    const data = state.realTimeData;
+    const temDados = data.length > 0;
+    
+    // Se não tiver dados, usa hora atual. Se tiver, usa a do último pacote.
+    const now = temDados ? data[data.length - 1].dateObj : new Date();
+    const timeWindowMS = config.VISUAL_X_MAX_S * 1000; // 3000ms
+    
+    for (let i = 0; i <= divisiones; i++) {
+        const x_pos = (w / divisiones) * i;
         
         // Linha de grade vertical
         ctx.beginPath();
@@ -227,26 +233,34 @@ function desenharEixos(ctx, w, h) {
         ctx.lineTo(x_pos, h);
         ctx.stroke();
 
-        // Rótulo de Tempo (Segundos)
-        const time_label = (config.VISUAL_X_MAX_S - (timeStep * i / (totalPoints / divisiones))).toFixed(1);
-        ctx.fillText(`${time_label} s`, x_pos, h + 15);
+
+        const timeOffset = timeWindowMS * (1 - (i / divisiones));
+        const gridTime = new Date(now.getTime() - timeOffset);
+        
+        // Formata para mostrar apenas Segundos:Milissegundos (ex: 15:42)
+        const timeStr = gridTime.toLocaleTimeString('pt-BR', { second: '2-digit' }) + 
+                        ':' + String(gridTime.getMilliseconds()).padStart(3, '0').slice(0, 2);
+
+        ctx.fillText(timeStr, x_pos, h + 15);
     }
     
-    // Título do Eixo (Unidade)
-    ctx.fillText("Tempo (s)", w / 2, h + 30);
+    // Título do Eixo
+    ctx.fillText("Tempo (s:ms)", w / 2, h + 30);
 }
 
 
 function animarGrafico() {
     const ctx = dom.signalChart.getContext('2d');
     const w = dom.signalChart.width;
-    const h = dom.signalChart.height - 30; // Reduz a altura para dar espaço ao eixo X
+   
+    const h = dom.signalChart.height - 40; 
     
-    ctx.clearRect(0, 0, w, h + 30); // Limpa toda a área de plotagem e rótulos
+    // Limpa TUDO (incluindo a margem inferior onde ficam os números)
+    ctx.clearRect(0, 0, w, dom.signalChart.height); 
     
     const data = state.realTimeData;
     
-    // 1. Desenha Eixos e Grades
+    // 1. Desenha Eixos e Grades 
     desenharEixos(ctx, w, h);
     
     if (data.length < 2) {

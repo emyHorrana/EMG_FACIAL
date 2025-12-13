@@ -1,20 +1,33 @@
+
 let dom = {};
 const config = {
-    DATA_FETCH_INTERVAL_MS: 500,
-    MAX_DATA_POINTS: 300,
+    DATA_FETCH_INTERVAL_MS: 10, 
+    MAX_DATA_POINTS: 300, 
     TOAST_DURATION_MS: 3000,
+    MAX_ADC_VALUE: 4095, 
+    
+    // --- Configurações de Escala do Gráfico ---
+    // NOVO VALOR: 500 ADC significa que 500 ADC preencherá toda a altura do gráfico.
+    // Isso aplica um zoom de 4095 / 500 ≈ 8x.
+    VISUAL_Y_MAX: 500, 
+    
+    VISUAL_X_MAX_S: 3,  
 };
 
 const state = {
     isMonitoring: false,
     startTime: null,
-    realTimeData: [],
+    realTimeData: [], // Buffer para o gráfico (contém 'raw' e 'filtered')
+    dataForSaving: [], 
     savedFiles: [],
-    statistics: { maxAmplitude: -Infinity, minAmplitude: Infinity, currentAmplitude: 0, avgFrequency: 0, totalSamples: 0, lastAmplitude: 0 },
-    intervals: {}
+    statistics: { currentADC: 0, totalSamples: 0 }, 
+    intervals: {} 
 };
 
+// -------------------- INICIALIZAÇÃO E LISTENERS --------------------
+
 addEventListener('DOMContentLoaded', () => {
+    // Mapeamento DOM (Mantido)
     dom = {
         startBtn: document.getElementById('startBtn'),
         stopBtn: document.getElementById('stopBtn'),
@@ -22,10 +35,10 @@ addEventListener('DOMContentLoaded', () => {
         toast: document.getElementById('toast'),
         fileHistoryBody: document.getElementById('fileHistoryBody'),
         dataTableBody: document.getElementById('dataTableBody'),
-        currentAmplitude: document.getElementById('currentAmplitude'),
+        currentAmplitude: document.getElementById('currentAmplitude'), 
         avgFrequency: document.getElementById('avgFrequency'),
         recordingTime: document.getElementById('recordingTime'),
-        signalChart: document.getElementById('signalChart'),
+        signalChart: document.getElementById('signalChart'), 
         saveModal: document.getElementById('saveModal'),
         btnNo: document.getElementById('btnNo'),
         btnYes: document.getElementById('btnYes'),
@@ -33,6 +46,8 @@ addEventListener('DOMContentLoaded', () => {
         fileName: document.getElementById('fileName'),
         inputGroup: document.getElementById('inputGroup'),
         modalBody: document.getElementById('modalBody'),
+        connectionStatus: document.getElementById('connectionStatus'),
+        clock: document.getElementById('clock'),
     };
 
     dom.startBtn.addEventListener('click', iniciarMonitoramento);
@@ -50,40 +65,264 @@ addEventListener('DOMContentLoaded', () => {
         clearTimeout(window.resizeTimeout);
         window.resizeTimeout = setTimeout(redimensionarCanvas, 200);
     });
-    requestAnimationFrame(animarGrafico);
+    // Define a janela máxima de pontos com base no tempo e na frequência de Polling
+    config.MAX_DATA_POINTS = (config.VISUAL_X_MAX_S * 1000) / config.DATA_FETCH_INTERVAL_MS;
+    
+    requestAnimationFrame(animarGrafico); 
+    renderizarHistorico(); 
 });
+
+// -------------------- FUNÇÕES DE POLLING E PROCESSAMENTO --------------------
+
+function buscarDadosRealTime() {
+    if (!state.isMonitoring) return; 
+
+    // Rota corrigida: /live_data
+    fetch('/live_data') 
+        .then(res => {
+            if (!res.ok) throw new Error('Network response not ok');
+            return res.json(); 
+        })
+        .then(data => {
+            if (data && data.time_ms !== undefined) {
+                 processarAmostraRealTime(data); 
+            }
+        })
+        .catch(err => {})
+        .finally(() => {
+            setTimeout(buscarDadosRealTime, config.DATA_FETCH_INTERVAL_MS);
+        });
+}
+
+function processarAmostraRealTime(data) {
+    if (!state.isMonitoring || data.time_ms === undefined) return; 
+    
+    const amplitudeFiltrada = data.filtered || 0; 
+    const amplitudeBruta = data.raw || 0;
+    const timestamp = data.time_ms;
+
+    const newPoint = { 
+        timestamp: timestamp, 
+        filtered: amplitudeFiltrada, 
+        raw: amplitudeBruta,
+        dateObj: new Date(state.startTime + timestamp) 
+    };
+
+    state.realTimeData.push(newPoint); 
+    state.dataForSaving.push(newPoint); // Salva o ponto inteiro
+
+    // Atualiza estatísticas e UI com base no sinal filtrado
+    state.statistics.currentADC = amplitudeFiltrada;
+    
+    if (state.realTimeData.length > config.MAX_DATA_POINTS) {
+        state.realTimeData.shift(); 
+    }
+    
+    // ... (restante da atualização da UI)
+    const highlightClass = amplitudeFiltrada > 3000 || amplitudeFiltrada < 1000 ? 'highlight-pulse' : '';
+    dom.currentAmplitude.innerHTML = `<span class="${highlightClass}">${amplitudeFiltrada}</span> <span class="unit">ADC</span>`; 
+    dom.avgFrequency.innerHTML = `${(1000 / config.DATA_FETCH_INTERVAL_MS).toFixed(0)} <span class="unit">Hz</span>`; 
+    
+    // ... (restante da atualização da tabela)
+    const ultimos = state.realTimeData.slice(-4).reverse();
+    dom.dataTableBody.innerHTML = ultimos.map(d => {
+        const timeStr = d.dateObj.toLocaleTimeString('pt-BR', { second: '2-digit', minute: '2-digit' }) + ':' + String(d.dateObj.getMilliseconds()).padStart(3, '0');
+        const ampHighlight = d.filtered > 3000 ? 'log-highlight' : ''; 
+        
+        return `
+            <div class="log-entry">
+                <span class="log-time">${timeStr}</span>
+                <span class="log-amplitude ${ampHighlight}">${d.filtered} ADC</span>
+            </div>
+        `;
+    }).join('');
+}
+
+// -------------------- RENDERIZAÇÃO DO GRÁFICO (OSCILOSCÓPIO) --------------------
+
+function redimensionarCanvas() {
+    const container = dom.signalChart.parentElement;
+    dom.signalChart.width = container.clientWidth;
+    const headerOffset = 50; 
+    dom.signalChart.height = container.clientHeight - headerOffset; 
+    
+    if (dom.signalChart.height <= 50) {
+        dom.signalChart.height = 350; 
+    }
+}
+
+function desenharSinal(ctx, data, property, color, isFiltered = false) {
+    const w = ctx.canvas.width;
+    const h = ctx.canvas.height;
+    
+    const VISUAL_Y_MAX = config.VISUAL_Y_MAX;
+    const scaleY = h / VISUAL_Y_MAX; 
+    const stepX = w / (config.MAX_DATA_POINTS - 1); 
+
+    ctx.beginPath();
+    ctx.strokeStyle = color; 
+    ctx.lineWidth = isFiltered ? 3 : 1; // Filtro mais espesso
+    ctx.shadowBlur = isFiltered ? 10 : 0; 
+    ctx.shadowColor = color;
+
+    data.forEach((pt, i) => {
+        const x = i * stepX;
+        
+        let y_mapped = pt[property] * scaleY;
+        
+        if (y_mapped > h) {
+            y_mapped = h;
+        }
+        
+        // Mapeamento: Inverte o eixo Y (ADC alto = Y baixo/topo do canvas)
+        const y = h - y_mapped;
+
+        if (i === 0) {
+            ctx.moveTo(x, y); 
+        } else {
+            ctx.lineTo(x, y);
+        }
+    });
+    
+    ctx.stroke();
+    ctx.shadowBlur = 0; // Limpa a sombra
+}
+
+function desenharEixos(ctx, w, h) {
+    const divisiones = 5;
+    
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.font = '10px Quicksand';
+    
+    // --- GRADES HORIZONTAIS e RÓTULOS ADC ---
+    ctx.textAlign = 'right';
+    const VISUAL_Y_MAX = config.VISUAL_Y_MAX;
+    
+    for (let i = 0; i <= divisiones; i++) {
+        const y_pos = (h / divisiones) * i;
+        
+        // Linha de grade
+        ctx.beginPath();
+        ctx.moveTo(0, y_pos);
+        ctx.lineTo(w, y_pos);
+        ctx.stroke();
+
+        // Rótulo ADC
+        const adc_value = Math.round(VISUAL_Y_MAX - (VISUAL_Y_MAX / divisiones) * i);
+        ctx.fillText(`${adc_value} ADC`, w - 5, y_pos - 2);
+    }
+    
+    // --- GRADES VERTICAIS e RÓTULOS DE TEMPO (Segundos) ---
+    ctx.textAlign = 'center';
+    const totalPoints = config.MAX_DATA_POINTS;
+    const timeStep = config.VISUAL_X_MAX_S / divisiones; // Tempo por divisão
+    
+    for (let i = 0; i < totalPoints; i += totalPoints / divisiones) {
+        const x_pos = (w / totalPoints) * i;
+        
+        // Linha de grade vertical
+        ctx.beginPath();
+        ctx.moveTo(x_pos, 0);
+        ctx.lineTo(x_pos, h);
+        ctx.stroke();
+
+        // Rótulo de Tempo (Segundos)
+        const time_label = (config.VISUAL_X_MAX_S - (timeStep * i / (totalPoints / divisiones))).toFixed(1);
+        ctx.fillText(`${time_label} s`, x_pos, h + 15);
+    }
+    
+    // Título do Eixo (Unidade)
+    ctx.fillText("Tempo (s)", w / 2, h + 30);
+}
+
+
+function animarGrafico() {
+    const ctx = dom.signalChart.getContext('2d');
+    const w = dom.signalChart.width;
+    const h = dom.signalChart.height - 30; // Reduz a altura para dar espaço ao eixo X
+    
+    ctx.clearRect(0, 0, w, h + 30); // Limpa toda a área de plotagem e rótulos
+    
+    const data = state.realTimeData;
+    
+    // 1. Desenha Eixos e Grades
+    desenharEixos(ctx, w, h);
+    
+    if (data.length < 2) {
+        ctx.fillStyle = 'rgba(255, 215, 0, 0.5)';
+        ctx.font = '20px Quicksand';
+        ctx.textAlign = 'center';
+        ctx.fillText('Aguardando Fluxo de Dados...', w / 2, h / 2);
+        requestAnimationFrame(animarGrafico); 
+        return;
+    }
+
+    // 2. Plota o Sinal Bruto (Linha Fina, cor diferente)
+    desenharSinal(ctx, data, 'raw', 'skyblue', false);
+
+    // 3. Plota o Sinal Filtrado (Linha Grossa, cor primária)
+    desenharSinal(ctx, data, 'filtered', '#FFD700', true);
+
+    requestAnimationFrame(animarGrafico); 
+}
+
+// -------------------- OUTRAS FUNÇÕES AUXILIARES (Mantidas) --------------------
 
 function iniciarMonitoramento() {
     if (state.isMonitoring) return;
     state.isMonitoring = true;
     state.startTime = Date.now();
     state.realTimeData = [];
-    state.statistics = { maxAmplitude: -Infinity, minAmplitude: Infinity, currentAmplitude: 0, avgFrequency: 0, totalSamples: 0, lastAmplitude: 0 };
-    
+    state.dataForSaving = []; 
+    state.statistics = { currentADC: 0, totalSamples: 0 };
     atualizarUI(true);
-    mostrarToast('✨ CAPTURANDO SORRISOS!');
-    fetch('/start').catch(e => console.log("Simulação (Backend offline)"));
-
-    state.intervals.fetch = setInterval(buscarDadosRealTime, config.DATA_FETCH_INTERVAL_MS);
-    state.intervals.timer = setInterval(atualizarCronometro, 1000);
+    mostrarToast('✨ CAPTURANDO SINAL EMG...');
+    fetch('/start').catch(e => console.error("Falha ao enviar /start:", e)); 
+    setTimeout(() => {
+        buscarDadosRealTime(); 
+        state.intervals.timer = setInterval(atualizarCronometro, 1000);
+    }, 100); 
 }
 
 function pararESalvar() {
     if (!state.isMonitoring) return;
-    state.isMonitoring = false;
-    clearInterval(state.intervals.fetch);
+    state.isMonitoring = false; 
     clearInterval(state.intervals.timer);
-    fetch('/stop').catch(e => {});
-    
+    fetch('/stop').catch(e => console.error("Falha ao enviar /stop:", e));
     atualizarUI(false);
-
     setTimeout(() => {
-        if (state.realTimeData.length === 0) {
-            mostrarToast('Nenhum dado capturado.');
+        if (state.dataForSaving.length === 0) {
+            mostrarToast('Nenhum dado capturado para salvar.');
             return;
         }
         abrirModal();
     }, 100);
+}
+
+function gerarEExportarCSV(nomeUsuario) {
+    const fileName = `${nomeUsuario.replace(/[^a-z0-9]/gi, '_')}_EMG.csv`;
+    // Inclui ambas as leituras no CSV
+    const header = 'Timestamp(ms),DataHoraISO,AmplitudeFiltrada(ADC),AmplitudeBruta(ADC)\n'; 
+    
+    const rows = state.dataForSaving.map(d => 
+        `${d.timestamp},${d.dateObj.toISOString()},${d.filtered},${d.raw}`
+    ).join('\n');
+    
+    const blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+
+    state.savedFiles.unshift({ nome: fileName, hora: new Date().toLocaleTimeString('pt-BR'), urlBlob: url, dados: state.dataForSaving.slice() });
+    renderizarHistorico();
+    mostrarToast(`ARQUIVO SALVO: ${fileName}`);
+}
+
+function atualizarCronometro() {
+    if (!state.startTime) return;
+    const diff = Math.floor((Date.now() - state.startTime) / 1000);
+    const m = Math.floor(diff / 60).toString().padStart(2,'0');
+    const s = (diff % 60).toString().padStart(2,'0');
+    dom.recordingTime.textContent = `${m}:${s}`; 
 }
 
 function abrirModal() {
@@ -91,7 +330,7 @@ function abrirModal() {
     dom.inputGroup.classList.add('hidden');
     dom.modalBody.querySelector('.modal-question').style.display = 'block';
     dom.modalBody.querySelector('.modal-buttons').style.display = 'flex';
-    dom.fileName.value = `Smile_${new Date().getHours()}h${new Date().getMinutes()}`;
+    dom.fileName.value = `Sessao_${new Date().getHours()}h${new Date().getMinutes()}`;
 }
 
 function fecharModal() {
@@ -115,55 +354,6 @@ function salvarArquivo() {
     fecharModal();
 }
 
-function buscarDadosRealTime() {
-    fetch('/data').then(res => res.text()).then(data => processarLoteDados(data)).catch(err => {});
-}
-
-function processarLoteDados(csvData) {
-    if (!csvData || !csvData.trim()) return;
-    const lines = csvData.trim().split('\n').filter(line => line.includes(',') && !line.includes('Timestamp'));
-    if (lines.length === 0) return;
-
-    lines.forEach(line => {
-        const [ts, ampStr, freqStr] = line.split(',');
-        const amplitude = parseFloat(ampStr) || 0;
-        const frequency = parseFloat(freqStr) || 0;
-        const timestamp = parseInt(ts) || Date.now();
-
-        state.realTimeData.push({ timestamp, amplitude, frequency, dateObj: new Date(timestamp * 1000) });
-        
-        state.statistics.currentAmplitude = amplitude;
-        state.statistics.totalSamples++;
-        state.statistics.avgFrequency = (state.statistics.avgFrequency + frequency) / 2;
-    });
-
-    if (state.realTimeData.length > config.MAX_DATA_POINTS) state.realTimeData = state.realTimeData.slice(-config.MAX_DATA_POINTS);
-    
-    const highlightClass = state.statistics.currentAmplitude > 0.5 ? 'style="color:#FFD700; text-shadow:0 0 15px #FFD700;"' : '';
-    dom.currentAmplitude.innerHTML = `<span ${highlightClass}>${state.statistics.currentAmplitude.toFixed(2)}</span> <span class="unit">mV</span>`;
-    dom.avgFrequency.innerHTML = `${state.statistics.avgFrequency.toFixed(1)} <span class="unit">Hz</span>`;
-    
-    const ultimos = state.realTimeData.slice(-4).reverse();
-    dom.dataTableBody.innerHTML = ultimos.map(d => `
-        <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid rgba(255,255,255,0.05); font-size:0.85rem; font-family:monospace;">
-            <span style="color:#9ca3af">${d.dateObj.toLocaleTimeString()}</span>
-            <span style="color:${d.amplitude > 0.5 ? '#FFD700' : '#fff'}; font-weight:${d.amplitude > 0.5 ? 'bold' : 'normal'}">${d.amplitude.toFixed(2)} mV</span>
-        </div>
-    `).join('');
-}
-
-function gerarEExportarCSV(nomeUsuario) {
-    const fileName = `${nomeUsuario.replace(/[^a-z0-9]/gi, '_')}.csv`;
-    const header = 'Timestamp,DataHora,Amplitude(mV),Frequencia(Hz)\n';
-    const rows = state.realTimeData.map(d => `${d.timestamp},${d.dateObj.toISOString()},${d.amplitude.toFixed(4)},${d.frequency.toFixed(2)}`).join('\n');
-    const blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-
-    state.savedFiles.unshift({ nome: fileName, hora: new Date().toLocaleTimeString(), urlBlob: url, dados: state.realTimeData.slice() });
-    renderizarHistorico();
-    mostrarToast(`ARQUIVO SALVO: ${fileName}`);
-}
-
 function renderizarHistorico() {
     const tbody = dom.fileHistoryBody;
     if (state.savedFiles.length === 0) {
@@ -173,7 +363,7 @@ function renderizarHistorico() {
     tbody.innerHTML = state.savedFiles.map((f, index) => `
         <tr>
             <td>${f.nome}</td>
-            <td style="color:#9ca3af">${f.hora}</td>
+            <td class="text-secondary">${f.hora}</td>
             <td><button onclick="baixarArquivo(${index})" class="download-link">BAIXAR</button></td>
         </tr>
     `).join('');
@@ -193,82 +383,33 @@ function baixarArquivo(index) {
     mostrarToast(`📥 Download: ${arquivo.nome}`);
 }
 
-function redimensionarCanvas() {
-    const container = dom.signalChart.parentElement;
-    dom.signalChart.width = container.clientWidth;
-    dom.signalChart.height = container.clientHeight - 50;
-}
-
-function animarGrafico() {
-    const ctx = dom.signalChart.getContext('2d');
-    const w = dom.signalChart.width;
-    const h = dom.signalChart.height;
-    const cy = h / 2;
-
-    ctx.clearRect(0, 0, w, h);
-    
-    ctx.strokeStyle = 'rgba(255, 215, 0, 0.1)';
-    ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(w, cy); ctx.stroke();
-
-    if (state.realTimeData.length < 2) {
-        requestAnimationFrame(animarGrafico); return;
+function limparDados() {
+    if (state.isMonitoring) {
+        mostrarToast('⚠️ Pare a captura antes de limpar os dados!');
+        return;
     }
-
-    ctx.beginPath();
-    const data = state.realTimeData;
-    const maxVal = 2.5;
-    const scaleY = (h / 2) / maxVal;
-    const stepX = w / (config.MAX_DATA_POINTS - 1);
-
-    const gradient = ctx.createLinearGradient(0, 0, w, 0);
-    gradient.addColorStop(0, '#FFD700');
-    gradient.addColorStop(1, '#FF8C00');
-
-    ctx.strokeStyle = gradient;
-    ctx.lineWidth = 3;
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = 'rgba(255, 215, 0, 0.5)';
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    data.forEach((pt, i) => {
-        const x = i * stepX;
-        const y = cy - (pt.amplitude * scaleY);
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-
-    requestAnimationFrame(animarGrafico);
+    state.realTimeData = [];
+    state.dataForSaving = []; 
+    state.savedFiles = [];
+    dom.dataTableBody.innerHTML = '';
+    renderizarHistorico();
+    mostrarToast('Dados e histórico de arquivos limpos.');
 }
 
 function atualizarUI(isRecording) {
     if (isRecording) {
         dom.startBtn.classList.add('hidden');
         dom.stopBtn.classList.remove('hidden');
+        dom.connectionStatus.classList.add('active'); 
     } else {
         dom.startBtn.classList.remove('hidden');
         dom.stopBtn.classList.add('hidden');
+        dom.connectionStatus.classList.remove('active');
     }
-}
-
-function atualizarCronometro() {
-    if (!state.startTime) return;
-    const diff = Math.floor((Date.now() - state.startTime) / 1000);
-    const m = Math.floor(diff / 60).toString().padStart(2,'0');
-    const s = (diff % 60).toString().padStart(2,'0');
-    dom.recordingTime.textContent = `00:${m}:${s}`;
-}
-
-function limparDados() {
-    state.realTimeData = [];
-    state.savedFiles = [];
-    dom.dataTableBody.innerHTML = '';
-    renderizarHistorico();
 }
 
 function mostrarToast(msg) {
     dom.toast.textContent = msg;
     dom.toast.classList.add('show');
-    setTimeout(() => dom.toast.classList.remove('show'), 3000);
+    setTimeout(() => dom.toast.classList.remove('show'), config.TOAST_DURATION_MS);
 }

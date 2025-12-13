@@ -30,7 +30,36 @@ body {
     cursor: default;
     background: radial-gradient(circle at bottom left, #2a2a30 0%, #121214 100%);
 }
+.chart-legend {
+    display: flex;
+    justify-content: center;
+    gap: 30px;
+    margin-top: 15px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
 
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+}
+
+.legend-color {
+    width: 15px;
+    height: 15px;
+    border-radius: 4px;
+    box-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
+}
+
+.legend-color.filtered {
+    background-color: #FFD700; /* Amarelo (Sinal Filtrado) */
+}
+
+.legend-color.raw {
+    background-color: skyblue; /* Azul (Sinal Bruto) */
+}
 .cursor-glow {
     position: fixed;
     width: 650px; height: 650px;
@@ -259,10 +288,13 @@ body {
 }
 
 .chart-wrapper { 
-    flex: 2; 
-    min-height: 350px; 
+     flex: 2; 
+    min-height: 380px; /* Aumentar min-height para garantir espaço vertical */
     display: flex; 
     flex-direction: column; 
+    /* Adicionar padding na parte inferior para os rótulos do eixo X (Tempo) */
+    padding: 25px 25px 45px 25px; 
+    /* ^^^ 45px garante espaço para os números e o título 'Tempo (s)' */
 }
 
 #signalChart { 

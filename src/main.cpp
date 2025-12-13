@@ -1,225 +1,183 @@
-#include <Arduino.h>     
-#include <WiFi.h>        
-#include <WebServer.h>   
-#include <LittleFS.h>    
+#include <Arduino.h> 
+#include <WiFi.h> 
+#include <WebServer.h>
+#include <LittleFS.h>
+#include <ArduinoJson.h> // ADICIONADO: Para serializar a resposta JSON
 
 // -------------------- CONFIGURAÇÕES BÁSICAS --------------------
-#define ANALOG_PIN_1 34           // Pino analógico utilizado para leitura do sinal
-#define SAMPLE_INTERVAL_US 1000   // Intervalo de amostragem em microssegundos (1 ms → 1000 Hz)
-#define RECORD_DURATION_MS 3000   // Duração total da gravação (3 segundos)
-#define MAX_SAMPLES (RECORD_DURATION_MS)  // Número máximo de amostras (equivale a 3000 amostras)
-#define WINDOW 10                 // Tamanho da janela da média móvel (número de amostras para o filtro)
+#define ANALOG_PIN_1 34     // Pino analógico utilizado para leitura do sinal
+#define SAMPLE_INTERVAL_US 1000// Intervalo de amostragem em microssegundos (1 ms → 1000 Hz)
+#define WINDOW 10          // Tamanho da janela da média móvel
 
 // -------------------- CONFIGURAÇÃO DO WIFI (ACCESS POINT) --------------------
-const char *ssid = "ESP32_AP";        
-const char *password = "12345678";    
+const char *ssid = "ESP32_AP";  
+const char *password = "12345678";
 
 WebServer server(80); 
 
 // -------------------- VARIÁVEIS DO FILTRO --------------------
-int filtroBuffer[WINDOW];   // Vetor para armazenar as últimas N leituras
-long filtroSoma = 0;        // Soma acumulada das leituras no buffer
-int filtroIndice = 0;       // Índice atual dentro do buffer (para controle circular)
-int filtroCount = 0;        // Contador de quantas amostras já foram armazenadas (até atingir WINDOW)
+int filtroBuffer[WINDOW]; 
+long filtroSoma = 0;      
+int filtroIndice = 0;      
+int filtroCount = 0;
 
-// -------------------- BUFFERS DE DADOS --------------------
-uint16_t bufferSignalRaw[MAX_SAMPLES];        // Vetor para armazenar o sinal bruto (sem filtro)
-uint16_t bufferSignalFiltrado[MAX_SAMPLES];   // Vetor para armazenar o sinal filtrado
-uint32_t bufferTime[MAX_SAMPLES];             // Vetor para armazenar o tempo correspondente de cada amostra
-int sampleCount = 0;                          // Contador de amostras coletadas
+// -------------------- VARIÁVEIS DE DADOS ATUAIS (TEMPO REAL) --------------------
+// Armazenam a última amostra lida, pronta para ser enviada via JSON
+uint32_t currentSampleTime = 0;
+uint16_t currentSignalRaw = 0;
+uint16_t currentSignalFiltrado = 0;
 
 // -------------------- CONTROLE DE GRAVAÇÃO --------------------
-String csvData = "Tempo (ms),Bruto,Filtrado\n"; // Cabeçalho do CSV (para exportar os dados)
-bool recording = false;                         // Flag que indica se a gravação está ativa
-unsigned long startTime = 0;                    // Tempo em que a gravação começou
-unsigned long lastSampleTime = 0;               // Marca do tempo da última amostra coletada
+bool recording = false; // Flag que indica se a captura está ativa
+unsigned long startTime = 0;        // Tempo em que a gravação começou
+unsigned long lastSampleTime = 0;// Marca do tempo da última amostra coletada
 
-// -------------------- FUNÇÃO DE FILTRAGEM (MÉDIA MÓVEL) --------------------
-int mediaMovel(int novoValor) {
-  // Subtrai o valor antigo do somatório
-  filtroSoma -= filtroBuffer[filtroIndice];
-  
-  // Substitui o valor antigo pelo novo valor lido
-  filtroBuffer[filtroIndice] = novoValor;
-  
-  // Soma o novo valor ao total
-  filtroSoma += novoValor;
-
-  // Atualiza o índice
-  filtroIndice = (filtroIndice + 1) % WINDOW;
-
-  // Se ainda não preencheu toda a janela, incrementa o contador
-  if (filtroCount < WINDOW) filtroCount++;
-
-  // Retorna a média (soma das amostras dividida pelo número de amostras válidas)
-  return filtroSoma / filtroCount;
-}
-
-/*
-int mediaMovelFor(int novoValor) {
-  static int buffer[WINDOW];            // Armazena os últimos valores lidos
-  static int indice = 0;                // Índice atual do buffer circular
-  static int count = 0;                 // Quantas amostras já foram registradas
-
-  buffer[indice] = novoValor;           // Insere o novo valor no buffer
-  indice = (indice + 1) % WINDOW;       // Avança circularmente
-  if (count < WINDOW) count++;          // Atualiza a contagem de amostras
-
-  long soma = 0;                        // Variável para acumular a soma
-  for (int i = 0; i < count; i++) {     // Soma todos os elementos da janela
-    soma += buffer[i];
-  }
-
-  return soma / count;                  // Retorna a média
-}
-
-*/
-
-// -------------------- FUNÇÕES DE SERVIÇO (SERVIDOR WEB) --------------------
+// -------------------- FUNÇÕES DE SERVIÇO AUXILIAR --------------------
+// Moveram-se para o topo para satisfazer a regra de declaração/definição do C++
 
 // Retorna o tipo de conteúdo com base na extensão do arquivo solicitado
 String getContentType(String filename) {
-  if (filename.endsWith(".htm") || filename.endsWith(".html")) return "text/html";
-  else if (filename.endsWith(".css")) return "text/css";
-  else if (filename.endsWith(".js")) return "application/javascript";
-  else if (filename.endsWith(".png")) return "image/png";
-  else if (filename.endsWith(".jpg")) return "image/jpeg";
-  else if (filename.endsWith(".ico")) return "image/x-icon";
-  else if (filename.endsWith(".json")) return "application/json";
-  return "text/plain";
+    if (filename.endsWith(".htm") || filename.endsWith(".html")) return "text/html";
+    else if (filename.endsWith(".css")) return "text/css";
+    else if (filename.endsWith(".js")) return "application/javascript";
+    else if (filename.endsWith(".json")) return "application/json";
+    return "text/plain";
 }
 
 // Lê um arquivo armazenado no LittleFS e envia ao navegador
 bool handleFileRead(String path) {
-  if (path.endsWith("/")) path += "index.html";  // Se não especificar arquivo, abre index.html
-  String contentType = getContentType(path);
-  File file = LittleFS.open(path, "r");
-  if (!file) {
-    Serial.println("Arquivo não encontrado: " + path);
-    return false;
-  }
-  server.streamFile(file, contentType);  // Envia o arquivo via servidor
-  file.close();
-  return true;
+    if (path.endsWith("/")) path += "index.html"; 
+    String contentType = getContentType(path);
+    File file = LittleFS.open(path, "r");
+    if (!file) {
+        Serial.println("Arquivo não encontrado: " + path);
+        return false;
+    }
+    server.streamFile(file, contentType); 
+    file.close();
+    return true;
 }
 
 // -------------------- ROTAS DO SERVIDOR --------------------
 
-// Caso o cliente acesse uma rota inexistente
-void handleNotFound() {
-  String uri = server.uri();
-  Serial.println("Requisição não encontrada: " + uri);
-
-  if(!handleFileRead(uri)){
-    server.send(404, "text/plain", "Arquivo não encontrado");
-  }
-}
-
-// Inicia a gravação dos dados (rota /start)
+// Inicia a captura em tempo real (rota /start)
 void handleStart() {
-  if(!recording){
-  if(!recording){
-    sampleCount = 0;
-    csvData = "Tempo (ms),Bruto,Filtrado\n";  // Reinicia o CSV
-    startTime = millis();
-    lastSampleTime = micros();
-    recording = true;
-  }
-  server.send(200, "text/plain", "Gravando...");
-  }
+    if(!recording){
+        startTime = millis();
+        lastSampleTime = micros();
+        recording = true;
+        Serial.println("Captura em tempo real iniciada.");
+    }
+    server.send(200, "text/plain", "Captura iniciada.");
 }
 
-// Envia os dados coletados ao cliente (rota /data)
-void handleData() {
-  server.send(200, "text/plain", csvData);
+// Para a captura em tempo real (rota /stop)
+void handleStop() {
+    recording = false; 
+    Serial.println("Captura em tempo real parada.");
+    server.send(200, "text/plain", "Captura parada.");
+}
+
+// Rota /live_data: Envia a última amostra em formato JSON (Resposta ao Polling)
+void handleLiveData() {
+    // Cria um objeto JSON estático (96 bytes é suficiente)
+    StaticJsonDocument<96> doc; 
+    char jsonBuffer[96]; // Buffer para armazenar a string JSON
+
+    if (recording) {
+        doc["time_ms"] = currentSampleTime;
+        doc["raw"] = currentSignalRaw;
+        doc["filtered"] = currentSignalFiltrado;
+        
+        // 1. Serializa o JSON para o buffer de caracteres
+        size_t len = serializeJson(doc, jsonBuffer); 
+
+        server.setContentLength(len); 
+
+        server.send(200, "application/json", jsonBuffer); 
+    } else {
+        doc["status"] = "stopped";
+        size_t len = serializeJson(doc, jsonBuffer);
+
+        server.setContentLength(len);
+
+        server.send(200, "application/json", jsonBuffer);
+    }
+}
+// -------------------- FUNÇÃO DE FILTRAGEM (MÉDIA MÓVEL) --------------------
+int mediaMovel(int novoValor) {
+    // Subtrai o valor antigo do somatório
+    filtroSoma -= filtroBuffer[filtroIndice];
+    
+    // Substitui o valor antigo pelo novo valor lido
+    filtroBuffer[filtroIndice] = novoValor;
+    
+    // Soma o novo valor ao total
+    filtroSoma += novoValor;
+
+    // Atualiza o índice (circular)
+    filtroIndice = (filtroIndice + 1) % WINDOW;
+
+    // Atualiza o contador (apenas no início)
+    if (filtroCount < WINDOW) filtroCount++;
+
+    // Retorna a média
+    return filtroSoma / filtroCount;
 }
 
 // -------------------- CONFIGURAÇÃO INICIAL --------------------
 
 void setup() {
-  
-  Serial.begin(115200);  
-  analogSetAttenuation(ADC_11db); //Ajusta a atenuação do ADC para maior faixa de leitura
-  delay(1000);
+    
+    Serial.begin(115200);
+    analogSetAttenuation(ADC_11db); 
+    delay(1000);
 
-  if (!LittleFS.begin()) {
-    Serial.println("Erro ao montar LittleFS!");
-    return;
-  }
-  Serial.println("LittleFS montado com sucesso");
-
-  // Lista os arquivos disponíveis no sistema
-  Serial.println("Arquivos disponíveis:");
-  File root = LittleFS.open("/");
-  File file = root.openNextFile();
-  while (file) {
-    Serial.println(String(" - ") + file.name());
-    file = root.openNextFile();
-  }
-
-  // Cria o ponto de acesso Wi-Fi
-  WiFi.softAP(ssid, password);
-  Serial.println("Access Point iniciado");
-  Serial.print("IP do AP: ");
-  Serial.println("Access Point iniciado");
-  Serial.print("IP do AP: ");
-  Serial.println(WiFi.softAPIP());
-
-  // Configura rotas HTTP
-  server.onNotFound([]() {
-    if (!handleFileRead(server.uri())) {
-      server.send(404, "text/plain", "Arquivo não encontrado");
+    if (!LittleFS.begin()) {
+        Serial.println("Erro ao montar LittleFS!");
+        return;
     }
-  });
+    
+    WiFi.softAP(ssid, password);
 
-  // Ignora favicon (para evitar mensagens no console)
-  server.on("/favicon.ico", []() {
-    server.send(204);
-  });
+    // Configura rotas HTTP
+    server.onNotFound([]() {
+        if (!handleFileRead(server.uri())) {
+            server.send(404, "text/plain", "Arquivo não encontrado");
+        }
+    });
+    server.on("/favicon.ico", []() { server.send(204); });
 
-  server.on("/start", handleStart); // Inicia a gravação
-  server.on("/data", handleData);   // Envia os dados coletados
+    server.on("/start", handleStart);
+    server.on("/stop", handleStop);      
+    server.on("/live_data", handleLiveData); 
 
-  server.begin();
-  Serial.println("Servidor HTTP iniciado");
+    server.begin();
+    Serial.println("Servidor HTTP iniciado");
 }
 
 // -------------------- LOOP PRINCIPAL --------------------
 void loop() {
-  server.handleClient(); // Mantém o servidor respondendo a requisições
+    server.handleClient(); // Mantém o servidor respondendo a requisições
 
-  // Se a gravação estiver ativa:
-  if(recording){
     unsigned long now_us = micros();
-    unsigned long elapsed_ms = millis() - startTime;
+    
+    // LÓGICA DE AMOSTRAGEM CONTÍNUA:
+    // Coleta nova amostra apenas quando o intervalo de 1ms for atingido
+    if(now_us - lastSampleTime >= SAMPLE_INTERVAL_US){
+        lastSampleTime = now_us;
 
-    // Coleta nova amostra 
-    if(elapsed_ms <= RECORD_DURATION_MS && (now_us - lastSampleTime >= SAMPLE_INTERVAL_US)){
-      lastSampleTime = now_us; //Marca do tempo da última amostra coletada
+        int leitura = analogRead(ANALOG_PIN_1);// Leitura do sinal bruto
+        int filtrado = mediaMovel(leitura);     // Aplica o filtro
 
-      if(sampleCount < MAX_SAMPLES){
-        int leitura = analogRead(ANALOG_PIN_1);  // Leitura do sinal bruto
-        int filtrado = mediaMovel(leitura);      // Aplica o filtro de média móvel
+        // ATUALIZAÇÃO DAS VARIÁVEIS GLOBAIS DE ÚLTIMA LEITURA
+        currentSampleTime = millis() - startTime; 
+        currentSignalRaw = leitura;
+        currentSignalFiltrado = filtrado;
 
-        // Armazena tempo, sinal bruto e sinal filtrado
-        bufferTime[sampleCount] = elapsed_ms;
-        bufferSignalRaw[sampleCount] = leitura;
-        bufferSignalFiltrado[sampleCount] = filtrado;
-        sampleCount++;
-      }
+        // Debug (só imprime se estiver gravando)
+        if(recording){
+            Serial.printf("T: %lu ms, B: %u, F: %u\n", currentSampleTime, currentSignalRaw, currentSignalFiltrado);
+        }
     }
-
-    // Quando atingir o tempo máximo de gravação:
-    if(elapsed_ms > RECORD_DURATION_MS){
-      // Monta o conteúdo CSV com todos os dados coletados
-      for(int i=0; i<sampleCount; i++){
-        csvData += String(bufferTime[i]) + "," +
-                   String(bufferSignalRaw[i]) + "," +
-                   String(bufferSignalFiltrado[i]) + "\n";
-      }
-      recording = false;
-      Serial.println("Captura finalizada! Usando atenuação de 3.3");
-    }
-  }
 }
- 

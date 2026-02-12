@@ -34,7 +34,14 @@ function animateHeader() {
             }, 2000);
         } else if (isDeleting && charIndex > 0) {
             currentText = currentText.slice(0, -1);
-            titleElement.textContent = currentText;
+            
+            
+            if (currentText === '') {
+                titleElement.innerHTML = '&nbsp;';
+            } else {
+                titleElement.textContent = currentText;
+            }
+            
             charIndex--;
             setTimeout(typeEffect, 60);
         } else if (isDeleting && charIndex === 0) {

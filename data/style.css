@@ -99,10 +99,21 @@ body {
 }
 
 .header-content h1 {
-    font-size: 1.5rem; font-weight: 700; margin-bottom: 5px;
+    font-size: 1.5rem; 
+    font-weight: 700; 
+    margin-bottom: 5px;
     background: linear-gradient(to right, var(--primary), var(--secondary));
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    -webkit-background-clip: text; 
+    -webkit-text-fill-color: transparent;
     background-clip: text;
+    
+    
+    height: 1.5em;
+    line-height: 1.5em;
+    display: inline-block;
+    vertical-align: middle;
+    white-space: nowrap;
+    overflow: visible;
 }
 
 .header-content p { 

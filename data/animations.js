@@ -12,7 +12,7 @@ function animateHeader() {
     const titleElement = document.getElementById('main-title');
     if (!titleElement) return;
     
-    const fullText = 'MONITOR DE SORRISOS ✨';
+    const fullText = 'ANÁLISE DE AMPLITUDE EMG✨';
     let currentText = '';
     let charIndex = 0;
     let isDeleting = false;

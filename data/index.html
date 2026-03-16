@@ -18,8 +18,8 @@
     <div class="container glass-panel">
         <header class="header">
             <div class="header-content">
-                <h1 id="main-title">MONITOR DE SORRISOS ✨</h1>
-                <p id="sub-title">Capturando Energia Positiva em Tempo Real</p>
+                <h1 id="main-title">ANÁLISE DE AMPLITUDE EMG✨</h1>
+                <p id="sub-title">Análise de Atividade do Músculo Zigomático Maior em Tempo Real</p>
             </div>
             <div class="header-status">
                 <span class="status-badge" id="connectionStatus">
@@ -36,7 +36,7 @@
                         <span class="icon">😊</span> INICIAR CAPTURA
                     </button>
                     <button class="btn btn-danger hidden" id="stopBtn">
-                        <span class="icon">⏹</span> SALVAR ALEGRIA
+                        <span class="icon">⏹</span> SALVAR EVENTO
                     </button>
                     <button class="btn btn-secondary" id="clearBtn">
                         <span class="icon">✨</span> LIMPAR TELA
@@ -44,7 +44,7 @@
                 </div>
 
                 <div class="metric-card active-card">
-                    <label>INTENSIDADE DO SORRISO</label>
+                    <label> ATIVIDADE MUSCULAR INSTANTÂNEA✨</label>
                     <div class="value-large" id="currentAmplitude">0.00 <span class="unit">mV</span></div>
                 </div>
 
@@ -54,7 +54,7 @@
                 </div>
 
                 <div class="metric-card">
-                    <label>DURAÇÃO DA ALEGRIA</label>
+                    <label>DURAÇÃO DO EVENTO</label>
                     <div class="value-medium" id="recordingTime">00:00</div>
                 </div>
             </aside>
@@ -87,7 +87,7 @@
                                     </tr>
                                 </thead>
                                 <tbody id="fileHistoryBody">
-                                    <tr><td colspan="3" class="empty">Vamos capturar alguns sorrisos?</td></tr>
+                                    <tr><td colspan="3" class="empty">Inicie a captura para gerar o log de eventos</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -95,7 +95,7 @@
                     
                     <div class="glass-card log-card">
                         <div class="card-header">
-                            <h3>PICOS DE ALEGRIA</h3>
+                            <h3>HISTÓRICO DE PICOS</h3>
                         </div>
                         <div class="mini-log" id="dataTableBody">
                         </div>

@@ -686,7 +686,7 @@ function renderizarHistorico() {
 
     if (state.savedFiles.length === 0) {
 
-        tbody.innerHTML = '<tr><td colspan="3" class="empty">Vamos capturar alguns sorrisos?</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="3" class="empty">Inicie a captura para gerar o log de eventos.</td></tr>';
 
         return;
 

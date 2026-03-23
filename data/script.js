@@ -11,7 +11,7 @@ const config = {
 
 const state = {
     isMonitoring: false,
-    amostrasProcessadas: 0, // Relógio matemático infalível
+    amostrasProcessadas: 0, 
     realTimeData: [],
     dataForSaving: [],
     savedFiles: [],
@@ -158,7 +158,7 @@ function desenharEixos(ctx, w, h) {
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
     ctx.font = '10px Quicksand';
 
-    // Alinhamento das linhas horizontais (Valores do ADC)
+    
     ctx.textAlign = 'right';
     for (let i = 0; i <= divisiones; i++) {
         const y_pos = (h / divisiones) * i;

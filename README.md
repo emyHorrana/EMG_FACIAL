@@ -1,4 +1,4 @@
-# 😊 EMG FACIAL  📊
+# EMG FACIAL  📊
 
 ## 📋 Descrição do Projeto
 
@@ -13,7 +13,7 @@ Desenvolver um sistema de monitoramento não-invasivo que:
 - Permite exportação de dados para análises posteriores
 - Oferece interface web intuitiva para visualização em tempo real
 
-## 🏗️ Arquitetura do Sistema
+## Arquitetura do Sistema
 
 ### Hardware (Backend - ESP32)
 - **Microcontrolador**: ESP32 com WiFi integrado
@@ -27,7 +27,7 @@ Desenvolver um sistema de monitoramento não-invasivo que:
 - **Funcionalidades**: Captura, análise e exportação de dados
 - **Compatibilidade**: Multiplataforma via navegador web
 
-## 🚀 Como Funciona
+## Como Funciona
 
 ### 1. **Configuração do Hardware**
 ```
@@ -37,14 +37,13 @@ ESP32 → Eletrodos EMG → Músculo Zigomático
 ### 2. **Processo de Captura**
 1. **Inicialização**: ESP32 cria rede WiFi "ESP32_CSV"
 2. **Conexão**: Usuario conecta via navegador (IP: 192.168.4.1)
-3. **Calibração**: Sistema estabelece linha base do sinal
-4. **Monitoramento**: Captura contínua a 1kHz por 3 segundos
-5. **Processamento**: Conversão analógica-digital dos sinais EMG
+3. **Monitoramento**: Captura contínua a 1kHz por 3 segundos
+4. **Processamento**: Conversão analógica-digital dos sinais EMG
 
 ### 3. **Interface Web - Passo a Passo**
 
 #### 🖥️ **Tela Principal**
-- **Status de Conexão**: Indicador visual do eletrodo
+- **Status de Conexão**
 - **Painel de Controle**: Botões para iniciar/parar captura
 - **Gráfico em Tempo Real**: Visualização dinâmica dos sinais
 - **Estatísticas Instantâneas**: Métricas em tempo real
@@ -63,21 +62,8 @@ ESP32 → Eletrodos EMG → Músculo Zigomático
 - **Amostras Coletadas**: Total de pontos capturados
 - **Tempo de Gravação**: Duração da sessão (mm:ss)
 
-**Análise de Qualidade:**
-- **Excelente**: Amplitude > 3mV (sorriso intenso)
-- **Boa**: Amplitude 2-3mV (sorriso moderado)
-- **Regular**: Amplitude 1-2mV (sorriso leve)
-- **Baixa**: Amplitude < 1mV (mínima atividade)
-
 ### 4. **Exportação e Análise**
-- **Formato**: CSV com timestamp, amplitude, frequência e qualidade
-- **Compatibilidade**: Excel, Python, R, MATLAB
-- **Dados Inclusos**: 
-  - Timestamp completo
-  - Tempo relativo (s)
-  - Amplitude em milivolts
-  - Frequência em Hz
-  - Classificação de qualidade
+- **Formato**: CSV com timestamp, amplitude, frequência.
 
 ## 🛠️ Tecnologias Utilizadas
 
@@ -92,7 +78,6 @@ ESP32 → Eletrodos EMG → Músculo Zigomático
 - **CSS3**: Estilização responsiva
 - **JavaScript ES6**: Lógica da aplicação
 - **Chart.js**: Biblioteca para gráficos
-- **Web APIs**: FileSystem, Blob, URL para exportação
 
 ## 🔧 Configuração e Instalação
 
@@ -135,11 +120,10 @@ code .
 - Estudos de emoção
 - Interface homem-máquina
 
-## 📊 Especificações Técnicas
+## Especificações Técnicas
 
 ### Parâmetros de Captura
 - **Taxa de Amostragem**: 1000 Hz (1 amostra/ms)
-- **Duração**: 3 segundos por sessão
 - **Resolução**: 12 bits (4096 níveis)
 - **Faixa Dinâmica**: 0-3.3V (ESP32)
 

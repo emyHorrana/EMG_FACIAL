@@ -5,124 +5,111 @@
 #include <ArduinoJson.h> // ADICIONADO: Para serializar a resposta JSON
 
 // -------------------- CONFIGURAÇÕES BÁSICAS --------------------
-#define ANALOG_PIN_1 34     // Pino analógico utilizado para leitura do sinal
-#define SAMPLE_INTERVAL_US 1000// Intervalo de amostragem em microssegundos (1 ms → 1000 Hz)
-#define WINDOW 10          // Tamanho da janela da média móvel
+#define PINO_ANALOGICO_1 34     // Pino analógico utilizado para leitura do sinal
+#define INTERVALO_AMOSTRAGEM_US 1000// Intervalo de amostragem em microssegundos (1 ms → 1000 Hz)
+#define JANELA 10          // Tamanho da janela da média móvel
 
 // -------------------- CONFIGURAÇÃO DO WIFI (ACCESS POINT) --------------------
-const char *ssid = "ESP32_AP";  
-const char *password = "12345678";
+const char *nomeRede = "ESP32_AP";  
+const char *senhaRede = "12345678";
 
-WebServer server(80); 
+WebServer servidor(80); 
 
 // -------------------- VARIÁVEIS DO FILTRO --------------------
-int filtroBuffer[WINDOW]; 
-long filtroSoma = 0;      
-int filtroIndice = 0;      
-int filtroCount = 0;
+int bufferFiltro[JANELA]; 
+long somaFiltro = 0;      
+int indiceFiltro = 0;      
+int contadorFiltro = 0;
 
 // -------------------- VARIÁVEIS DE DADOS ATUAIS (TEMPO REAL) --------------------
-// Armazenam a última amostra lida, pronta para ser enviada via JSON
-uint32_t currentSampleTime = 0;
-uint16_t currentSignalRaw = 0;
-uint16_t currentSignalFiltrado = 0;
+uint32_t tempoAmostraAtual = 0;
+uint16_t sinalBrutoAtual = 0;
+uint16_t sinalFiltradoAtual = 0;
 
 // -------------------- CONTROLE DE GRAVAÇÃO --------------------
-bool recording = false; // Flag que indica se a captura está ativa
-unsigned long startTime = 0;        // Tempo em que a gravação começou
-unsigned long lastSampleTime = 0;// Marca do tempo da última amostra coletada
+bool gravando = false; 
+unsigned long tempoInicio = 0;        
+unsigned long tempoUltimaAmostra = 0;
 
 // -------------------- FUNÇÕES DE SERVIÇO AUXILIAR --------------------
-// Moveram-se para o topo para satisfazer a regra de declaração/definição do C++
 
-// Retorna o tipo de conteúdo com base na extensão do arquivo solicitado
-String getContentType(String filename) {
-    if (filename.endsWith(".htm") || filename.endsWith(".html")) return "text/html";
-    else if (filename.endsWith(".css")) return "text/css";
-    else if (filename.endsWith(".js")) return "application/javascript";
-    else if (filename.endsWith(".json")) return "application/json";
+String obterTipoConteudo(String nomeArquivo) {
+    if (nomeArquivo.endsWith(".htm") || nomeArquivo.endsWith(".html")) return "text/html";
+    else if (nomeArquivo.endsWith(".css")) return "text/css";
+    else if (nomeArquivo.endsWith(".js")) return "application/javascript";
+    else if (nomeArquivo.endsWith(".json")) return "application/json";
     return "text/plain";
 }
 
-// Lê um arquivo armazenado no LittleFS e envia ao navegador
-bool handleFileRead(String path) {
-    if (path.endsWith("/")) path += "index.html"; 
-    String contentType = getContentType(path);
-    File file = LittleFS.open(path, "r");
-    if (!file) {
-        Serial.println("Arquivo não encontrado: " + path);
+bool lerArquivo(String caminho) {
+    if (caminho.endsWith("/")) caminho += "index.html"; 
+    String tipoConteudo = obterTipoConteudo(caminho);
+    File arquivo = LittleFS.open(caminho, "r");
+    if (!arquivo) {
+        Serial.println("Arquivo não encontrado: " + caminho);
         return false;
     }
-    server.streamFile(file, contentType); 
-    file.close();
+    servidor.streamFile(arquivo, tipoConteudo); 
+    arquivo.close();
     return true;
 }
 
 // -------------------- ROTAS DO SERVIDOR --------------------
 
-// Inicia a captura em tempo real (rota /start)
-void handleStart() {
-    if(!recording){
-        startTime = millis();
-        lastSampleTime = micros();
-        recording = true;
+void iniciarCaptura() {
+    if(!gravando){
+        tempoInicio = millis();
+        tempoUltimaAmostra = micros();
+        gravando = true;
         Serial.println("Captura em tempo real iniciada.");
     }
-    server.send(200, "text/plain", "Captura iniciada.");
+    servidor.send(200, "text/plain", "Captura iniciada.");
 }
 
-// Para a captura em tempo real (rota /stop)
-void handleStop() {
-    recording = false; 
+void pararCaptura() {
+    gravando = false; 
     Serial.println("Captura em tempo real parada.");
-    server.send(200, "text/plain", "Captura parada.");
+    servidor.send(200, "text/plain", "Captura parada.");
 }
 
-// Rota /live_data: Envia a última amostra em formato JSON (Resposta ao Polling)
-void handleLiveData() {
-    // Cria um objeto JSON estático (96 bytes é suficiente)
-    StaticJsonDocument<96> doc; 
-    char jsonBuffer[96]; // Buffer para armazenar a string JSON
+void dadosTempoReal() {
+    StaticJsonDocument<96> documento; 
+    char bufferJson[96]; 
 
-    if (recording) {
-        doc["time_ms"] = currentSampleTime;
-        doc["raw"] = currentSignalRaw;
-        doc["filtered"] = currentSignalFiltrado;
+    if (gravando) {
+        documento["time_ms"] = tempoAmostraAtual;
+        documento["raw"] = sinalBrutoAtual;
+        documento["filtered"] = sinalFiltradoAtual;
         
-        // 1. Serializa o JSON para o buffer de caracteres
-        size_t len = serializeJson(doc, jsonBuffer); 
+        size_t tamanho = serializeJson(documento, bufferJson); 
 
-        server.setContentLength(len); 
+        servidor.setContentLength(tamanho); 
 
-        server.send(200, "application/json", jsonBuffer); 
+        servidor.send(200, "application/json", bufferJson); 
     } else {
-        doc["status"] = "stopped";
-        size_t len = serializeJson(doc, jsonBuffer);
+        documento["status"] = "parado";
+        size_t tamanho = serializeJson(documento, bufferJson);
 
-        server.setContentLength(len);
+        servidor.setContentLength(tamanho);
 
-        server.send(200, "application/json", jsonBuffer);
+        servidor.send(200, "application/json", bufferJson);
     }
 }
+
 // -------------------- FUNÇÃO DE FILTRAGEM (MÉDIA MÓVEL) --------------------
 int mediaMovel(int novoValor) {
-    // Subtrai o valor antigo do somatório
-    filtroSoma -= filtroBuffer[filtroIndice];
+
+    somaFiltro -= bufferFiltro[indiceFiltro];
     
-    // Substitui o valor antigo pelo novo valor lido
-    filtroBuffer[filtroIndice] = novoValor;
+    bufferFiltro[indiceFiltro] = novoValor;
     
-    // Soma o novo valor ao total
-    filtroSoma += novoValor;
+    somaFiltro += novoValor;
 
-    // Atualiza o índice (circular)
-    filtroIndice = (filtroIndice + 1) % WINDOW;
+    indiceFiltro = (indiceFiltro + 1) % JANELA;
 
-    // Atualiza o contador (apenas no início)
-    if (filtroCount < WINDOW) filtroCount++;
+    if (contadorFiltro < JANELA) contadorFiltro++;
 
-    // Retorna a média
-    return filtroSoma / filtroCount;
+    return somaFiltro / contadorFiltro;
 }
 
 // -------------------- CONFIGURAÇÃO INICIAL --------------------
@@ -138,46 +125,41 @@ void setup() {
         return;
     }
     
-    WiFi.softAP(ssid, password);
+    WiFi.softAP(nomeRede, senhaRede);
 
-    // Configura rotas HTTP
-    server.onNotFound([]() {
-        if (!handleFileRead(server.uri())) {
-            server.send(404, "text/plain", "Arquivo não encontrado");
+    servidor.onNotFound([]() {
+        if (!lerArquivo(servidor.uri())) {
+            servidor.send(404, "text/plain", "Arquivo não encontrado");
         }
     });
-    server.on("/favicon.ico", []() { server.send(204); });
+    servidor.on("/favicon.ico", []() { servidor.send(204); });
 
-    server.on("/start", handleStart);
-    server.on("/stop", handleStop);      
-    server.on("/live_data", handleLiveData); 
+    servidor.on("/start", iniciarCaptura);
+    servidor.on("/stop", pararCaptura);      
+    servidor.on("/live_data", dadosTempoReal); 
 
-    server.begin();
+    servidor.begin();
     Serial.println("Servidor HTTP iniciado");
 }
 
 // -------------------- LOOP PRINCIPAL --------------------
 void loop() {
-    server.handleClient(); // Mantém o servidor respondendo a requisições
+    servidor.handleClient();
 
-    unsigned long now_us = micros();
+    unsigned long agora_us = micros();
     
-    // LÓGICA DE AMOSTRAGEM CONTÍNUA:
-    // Coleta nova amostra apenas quando o intervalo de 1ms for atingido
-    if(now_us - lastSampleTime >= SAMPLE_INTERVAL_US){
-        lastSampleTime = now_us;
+    if(agora_us - tempoUltimaAmostra >= INTERVALO_AMOSTRAGEM_US){
+        tempoUltimaAmostra = agora_us;
 
-        int leitura = analogRead(ANALOG_PIN_1);// Leitura do sinal bruto
-        int filtrado = mediaMovel(leitura);     // Aplica o filtro
+        int leitura = analogRead(PINO_ANALOGICO_1);
+        int filtrado = mediaMovel(leitura);
 
-        // ATUALIZAÇÃO DAS VARIÁVEIS GLOBAIS DE ÚLTIMA LEITURA
-        currentSampleTime = millis() - startTime; 
-        currentSignalRaw = leitura;
-        currentSignalFiltrado = filtrado;
+        tempoAmostraAtual = millis() - tempoInicio; 
+        sinalBrutoAtual = leitura;
+        sinalFiltradoAtual = filtrado;
 
-        // Debug (só imprime se estiver gravando)
-        if(recording){
-            Serial.printf("T: %lu ms, B: %u, F: %u\n", currentSampleTime, currentSignalRaw, currentSignalFiltrado);
+        if(gravando){
+            Serial.printf("T: %lu ms, B: %u, F: %u\n", tempoAmostraAtual, sinalBrutoAtual, sinalFiltradoAtual);
         }
     }
 }

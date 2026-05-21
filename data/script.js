@@ -339,123 +339,33 @@ function desenharSinal(ctx, data, property, color, isFiltered = false) {
 }
 
 
-
 function desenharEixos(ctx, w, h) {
 
     const divisiones = 5;
 
-    
-
     ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)'; 
-
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
     ctx.font = '10px Quicksand';
-
-    
 
     ctx.textAlign = 'right';
 
     const VISUAL_Y_MAX = config.VISUAL_Y_MAX;
 
-    
-
     for (let i = 0; i <= divisiones; i++) {
 
         const y_pos = (h / divisiones) * i;
 
-        
-
         ctx.beginPath();
-
         ctx.moveTo(0, y_pos);
-
         ctx.lineTo(w, y_pos);
-
         ctx.stroke();
-
-
 
         const adc_value = Math.round(VISUAL_Y_MAX - (VISUAL_Y_MAX / divisiones) * i);
 
-        if (i < divisiones) { 
-
-            ctx.fillText(`${adc_value}`, w - 5, y_pos + 10); 
-
+        if (i < divisiones) {
+            ctx.fillText(`${adc_value}`, w - 5, y_pos + 10);
         }
-
     }
-
-    
-
-    ctx.textAlign = 'center';
-
-    
-
-    const data = state.realTimeData;
-
-    const temDados = data.length > 0;
-
-    const timeWindowMS = config.VISUAL_X_MAX_S * 1000;
-
-    
-
-    let now;
-
-    if (temDados) {
-
-        now = data[data.length - 1].dateObj;
-
-    }
-
-
-
-    for (let i = 0; i <= divisiones; i++) {
-
-        const x_pos = (w / divisiones) * i;
-
-        
-
-        ctx.beginPath();
-
-        ctx.moveTo(x_pos, 0);
-
-        ctx.lineTo(x_pos, h);
-
-        ctx.stroke();
-
-
-
-        let timeStr = "--:--";
-
-        
-
-        if (temDados && now) {
-
-            const timeOffset = timeWindowMS * (1 - (i / divisiones));
-
-            const gridTime = new Date(now.getTime() - timeOffset);
-
-            timeStr = gridTime.toLocaleTimeString('pt-BR', { second: '2-digit' }) + 
-
-                      ':' + String(gridTime.getMilliseconds()).padStart(3, '0').slice(0, 2);
-
-        } else if (i === divisiones) {
-
-            timeStr = "00:00";
-
-        }
-
-
-
-        ctx.fillText(timeStr, x_pos, h + 15);
-
-    }
-
-    
-
-    ctx.fillText("Tempo (s:ms)", w / 2, h + 30);
-
 }
 
 
@@ -528,7 +438,7 @@ function iniciarMonitoramento() {
 
     atualizarUI(true);
 
-    mostrarToast('✨ CAPTURANDO SINAL EMG...');
+    mostrarToast('CAPTURANDO SINAL EMG...');
 
     fetch('/start').catch(e => console.error("Falha ao enviar /start:", e)); 
 
@@ -604,23 +514,21 @@ function gerarEExportarCSV(nomeUsuario) {
 
 }
 
-
-
 function atualizarCronometro() {
 
-    if (!state.startTime) return;
+    const data = state.realTimeData;
 
-    const diff = Math.floor((Date.now() - state.startTime) / 1000);
+    if (data.length === 0) return;
 
-    const m = Math.floor(diff / 60).toString().padStart(2,'0');
+    const tempo_ms = data[data.length - 1].timestamp;
 
-    const s = (diff % 60).toString().padStart(2,'0');
+    const totalSeg = Math.floor(tempo_ms / 1000);
 
-    dom.recordingTime.textContent = `${m}:${s}`; 
+    const m = Math.floor(totalSeg / 60).toString().padStart(2,'0');
+    const s = (totalSeg % 60).toString().padStart(2,'0');
 
+    dom.recordingTime.textContent = `${m}:${s}`;
 }
-
-
 
 function abrirModal() {
 

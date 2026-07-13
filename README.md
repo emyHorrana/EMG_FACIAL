@@ -1,8 +1,8 @@
-# EMG FACIAL  📊
+# EMG FACIAL  
 
-## 📋 Descrição do Projeto
+## Descrição do Projeto
 
-O **EMG FACIAL** é um projeto inovador que mede a contração do músculo zigomático do rosto através de sinais EMG (eletromiografia), funcionando essencialmente como um "sorrisômetro". O sistema captura, processa e analisa os sinais elétricos musculares em tempo real, fornecendo dados precisos sobre a intensidade e qualidade dos sorrisos através de gráficos interativos e análise estatística.
+EMG Facial é um sistema de aquisição de sinais de eletromiografia (EMG) baseado em ESP32 para monitoramento da atividade do músculo zigomático maior. O projeto realiza a captura, filtragem e visualização em tempo real dos sinais musculares por meio de uma interface web, permitindo a análise da intensidade das contrações faciais e fornecendo uma plataforma de baixo custo para aplicações em neurociência do consumidor, biofeedback e reconhecimento de expressões faciais.
 
 ## 🎯 Objetivo
 
@@ -42,13 +42,13 @@ ESP32 → Eletrodos EMG → Músculo Zigomático
 
 ### 3. **Interface Web - Passo a Passo**
 
-#### 🖥️ **Tela Principal**
+#### **Tela Principal**
 - **Status de Conexão**
 - **Painel de Controle**: Botões para iniciar/parar captura
 - **Gráfico em Tempo Real**: Visualização dinâmica dos sinais
 - **Estatísticas Instantâneas**: Métricas em tempo real
 
-#### 📊 **Funcionalidades Detalhadas**
+#### **Funcionalidades Detalhadas**
 
 **Controles Disponíveis:**
 - ▶️ **Iniciar Captura**: Inicia a gravação dos sinais EMG
@@ -79,7 +79,7 @@ ESP32 → Eletrodos EMG → Músculo Zigomático
 - **JavaScript ES6**: Lógica da aplicação
 - **Chart.js**: Biblioteca para gráficos
 
-## 🔧 Configuração e Instalação
+## Configuração e Instalação
 
 ### Pré-requisitos
 - **PlatformIO IDE** ou **VS Code + PlatformIO Extension**

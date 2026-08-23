@@ -16,7 +16,13 @@ const state = {
     dataForSaving: [],
     savedFiles: [],
     statistics: { currentADC: 0, totalSamples: 0 },
-    intervals: {}
+    intervals: {},
+
+// -------------------- INSTRUMENTAÇÃO: MÉTRICAS DE DESEMPENHO --------------------
+    latencias: [],              // guarda o tempo (ms) de cada round-trip do fetch
+    ultimoSampleCount: null,    // último valor de sample_count recebido do ESP32
+    amostrasPerdidas: 0,        // total de amostras que o ESP32 gerou mas não chegaram a ser usadas
+    amostrasUtilizadas: 0       // total de respostas do ESP32 realmente processadas
 };
 
 addEventListener('DOMContentLoaded', () => {
@@ -70,15 +76,37 @@ addEventListener('DOMContentLoaded', () => {
 function buscarDadosRealTime() {
     if (!state.isMonitoring) return;
 
-    fetch('/live_data')
+    // INSTRUMENTAÇÃO: marca o horário exato do envio da pergunta
+    const horarioEnvio = performance.now();
+
+   fetch('/live_data')
         .then(res => res.ok ? res.json() : null)
-        .then(data => { if (data) processarAmostraRealTime(data); })
+        .then(data => {
+            if (data) {
+                // INSTRUMENTAÇÃO: marca o horário de chegada e calcula o round-trip
+                const horarioChegada = performance.now();
+                state.latencias.push(horarioChegada - horarioEnvio);
+ 
+                processarAmostraRealTime(data);
+            }
+        })
         .catch(() => {})
         .finally(() => setTimeout(buscarDadosRealTime, config.DATA_FETCH_INTERVAL_MS));
 }
 
 function processarAmostraRealTime(data) {
     if (!state.isMonitoring) return;
+
+     // INSTRUMENTAÇÃO: calcula a perda de amostras usando o sample_count do ESP32
+    if (typeof data.sample_count === 'number') {
+        if (state.ultimoSampleCount !== null) {
+            const geradasDesdeUltimaLeitura = data.sample_count - state.ultimoSampleCount;
+            const perdidasAgora = Math.max(0, geradasDesdeUltimaLeitura - 1);
+            state.amostrasPerdidas += perdidasAgora;
+        }
+        state.ultimoSampleCount = data.sample_count;
+        state.amostrasUtilizadas++;
+    }
 
     state.amostrasProcessadas++;
     const tempoMatematicoMs = state.amostrasProcessadas * config.DATA_FETCH_INTERVAL_MS;
@@ -300,6 +328,17 @@ function iniciarMonitoramento() {
     state.realTimeData = [];
     state.dataForSaving = [];
     state.statistics = { currentADC: 0, totalSamples: 0 };
+
+
+    // INSTRUMENTAÇÃO: zera as métricas da sessão anterior antes de começar uma nova
+    state.latencias = [];
+    state.ultimoSampleCount = null;
+    state.amostrasPerdidas = 0;
+    state.amostrasUtilizadas = 0;
+
+
+
+
     atualizarUI(true);
 
     mostrarToast('✨ CAPTURANDO SINAL EMG...');
@@ -318,6 +357,9 @@ function pararESalvar() {
     clearInterval(state.intervals.timer);
 
     fetch('/stop').catch(e => console.error(e));
+
+     // INSTRUMENTAÇÃO: mostra o resumo da sessão no console do navegador
+    exibirResumoInstrumentacao();
 
     atualizarUI(false);
     setTimeout(() => {

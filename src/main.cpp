@@ -26,6 +26,11 @@ uint32_t tempoAmostraAtual = 0;
 uint16_t sinalBrutoAtual = 0;
 uint16_t sinalFiltradoAtual = 0;
 
+
+// -------------------- INSTRUMENTAÇÃO: CONTADOR DE AMOSTRAS --------------------
+// Conta TODAS as amostras geradas pelo loop (1 kHz), independente de ter sido gravadas ou não. 
+uint32_t amostrasTotaisGeradas = 0;
+
 // -------------------- CONTROLE DE GRAVAÇÃO --------------------
 bool gravando = false; 
 unsigned long tempoInicio = 0;        
@@ -73,8 +78,8 @@ void pararCaptura() {
 }
 
 void dadosTempoReal() {
-    StaticJsonDocument<96> documento; 
-    char bufferJson[96]; 
+    StaticJsonDocument<128> documento; 
+    char bufferJson[128];                    //Aumentado o tamanho do buffer para 128 bytes para caber o campo novo 
 
     if (gravando) {
         documento["time_ms"] = tempoAmostraAtual;
@@ -159,6 +164,7 @@ void loop() {
         sinalFiltradoAtual = filtrado;
 
         if(gravando){
+            amostrasTotaisGeradas++;        // incrementa o contador de amostras totais geradas
             Serial.printf("T: %lu ms, B: %u, F: %u\n", tempoAmostraAtual, sinalBrutoAtual, sinalFiltradoAtual);
         }
     }

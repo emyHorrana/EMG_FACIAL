@@ -387,6 +387,9 @@ function pararESalvar() {
      // INSTRUMENTAÇÃO: mostra o resumo da sessão no console do navegador
     exibirResumoInstrumentacao();
 
+     // INSTRUMENTAÇÃO: mostra o resumo da sessão no console do navegador
+    exibirResumoInstrumentacao();
+
     atualizarUI(false);
     setTimeout(() => {
         if (state.dataForSaving.length === 0) {

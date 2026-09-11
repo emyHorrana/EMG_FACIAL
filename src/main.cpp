@@ -86,6 +86,7 @@ uint32_t tempoAmostraAtual = 0;
 uint16_t sinalBrutoAtual = 0;
 uint16_t sinalFiltradoAtual = 0;
 
+<<<<<<< HEAD
 // -------------------- STREAMING EM TEMPO REAL (WEBSOCKET) --------------------
 // Cada amostra recebe um número de sequência crescente. O navegador usa isso só para
 // detectar lacunas (instrumentação) — diferente da versão anterior (polling HTTP), aqui
@@ -103,6 +104,12 @@ void aoEventoWebSocket(uint8_t num, WStype_t tipo, uint8_t *payload, size_t leng
         Serial.printf("Cliente WebSocket #%u desconectado\n", num);
     }
 }
+=======
+
+// -------------------- INSTRUMENTAÇÃO: CONTADOR DE AMOSTRAS --------------------
+// Conta TODAS as amostras geradas pelo loop (1 kHz), independente de ter sido gravadas ou não. 
+uint32_t amostrasTotaisGeradas = 0;
+>>>>>>> 183240a16728a660244e4b2a97a91f196e99926f
 
 // -------------------- CONTROLE DE GRAVAÇÃO --------------------
 bool gravando = false;
@@ -167,6 +174,33 @@ void pararCaptura() {
     servidor.send(200, "text/plain", "Captura parada.");
 }
 
+<<<<<<< HEAD
+=======
+void dadosTempoReal() {
+    StaticJsonDocument<128> documento; 
+    char bufferJson[128];                    //Aumentado o tamanho do buffer para 128 bytes para caber o campo novo 
+
+    if (gravando) {
+        documento["time_ms"] = tempoAmostraAtual;
+        documento["raw"] = sinalBrutoAtual;
+        documento["filtered"] = sinalFiltradoAtual;
+        
+        size_t tamanho = serializeJson(documento, bufferJson); 
+
+        servidor.setContentLength(tamanho); 
+
+        servidor.send(200, "application/json", bufferJson); 
+    } else {
+        documento["status"] = "parado";
+        size_t tamanho = serializeJson(documento, bufferJson);
+
+        servidor.setContentLength(tamanho);
+
+        servidor.send(200, "application/json", bufferJson);
+    }
+}
+
+>>>>>>> 183240a16728a660244e4b2a97a91f196e99926f
 // -------------------- FUNÇÃO DE FILTRAGEM (MÉDIA MÓVEL) --------------------
 int mediaMovel(int novoValor) {
 
@@ -252,6 +286,7 @@ void loop() {
         sinalFiltradoAtual = filtrado;
 
         if(gravando){
+<<<<<<< HEAD
             loteWs += amostrasTotaisGeradas;
             loteWs += ',';
             loteWs += tempoAmostraAtual;
@@ -263,6 +298,9 @@ void loop() {
             amostrasTotaisGeradas++;
 
 #if DEBUG_SERIAL_POR_AMOSTRA
+=======
+            amostrasTotaisGeradas++;        // incrementa o contador de amostras totais geradas
+>>>>>>> 183240a16728a660244e4b2a97a91f196e99926f
             Serial.printf("T: %lu ms, B: %u, F: %u\n", tempoAmostraAtual, sinalBrutoAtual, sinalFiltradoAtual);
 #endif
         }

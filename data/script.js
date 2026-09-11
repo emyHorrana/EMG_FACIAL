@@ -1,22 +1,30 @@
 let dom = {};
 
 const config = {
-    DATA_FETCH_INTERVAL_MS: 10,
+    SAMPLE_INTERVAL_MS: 1,      // intervalo real entre amostras no ESP32 (1kHz - deve bater com INTERVALO_AMOSTRAGEM_US do firmware)
     MAX_DATA_POINTS: 300,
     TOAST_DURATION_MS: 3000,
-    MAX_ADC_VALUE: 4095,
-    VISUAL_Y_MAX: 1200,
     VISUAL_X_MAX_S: 3,
+    WEBSOCKET_PORTA: 81,
+    VISUAL_Y_MAX: 1200,         // escala vertical FIXA e compartilhada entre raw e filtered (ajuste se seu sinal ultrapassar isso)
 };
 
 const state = {
     isMonitoring: false,
-    amostrasProcessadas: 0, 
     realTimeData: [],
     dataForSaving: [],
     savedFiles: [],
     statistics: { currentADC: 0, totalSamples: 0 },
-    intervals: {}
+    intervals: {},
+    socketWs: null,
+
+// -------------------- INSTRUMENTAÇÃO: MÉTRICAS DE DESEMPENHO --------------------
+    intervalosFrame: [],        // intervalo (ms) entre frames WebSocket consecutivos, medido no navegador
+    ultimoFrameWsEm: null,      // performance.now() do último frame WebSocket recebido
+    proximoSeqEsperado: null,   // próximo número de sequência esperado (detecta lacunas na entrega)
+    ultimoTempoMsReal: 0,       // timestamp real (do ESP32) da última amostra processada
+    amostrasPerdidas: 0,        // lacunas detectadas na sequência recebida (deveria ficar ~0 com WebSocket)
+    amostrasUtilizadas: 0       // total de amostras realmente processadas no navegador
 };
 
 addEventListener('DOMContentLoaded', () => {
@@ -57,7 +65,11 @@ addEventListener('DOMContentLoaded', () => {
         window.resizeTimeout = setTimeout(redimensionarCanvas, 200);
     });
 
-    config.MAX_DATA_POINTS = (config.VISUAL_X_MAX_S * 1000) / config.DATA_FETCH_INTERVAL_MS;
+    config.MAX_DATA_POINTS = (config.VISUAL_X_MAX_S * 1000) / config.SAMPLE_INTERVAL_MS;
+
+    // Conecta o WebSocket já na carga da página (não só ao clicar em Iniciar), pra a conexão
+    // já estar pronta quando a captura começar de verdade.
+    conectarWebSocket();
 
     requestAnimationFrame(animarGrafico);
     renderizarHistorico();
@@ -67,39 +79,78 @@ addEventListener('DOMContentLoaded', () => {
 // COMUNICAÇÃO COM O ESP32
 // ================================================================
 
-function buscarDadosRealTime() {
-    if (!state.isMonitoring) return;
-
-    fetch('/live_data')
-        .then(res => res.ok ? res.json() : null)
-        .then(data => { if (data) processarAmostraRealTime(data); })
-        .catch(() => {})
-        .finally(() => setTimeout(buscarDadosRealTime, config.DATA_FETCH_INTERVAL_MS));
-}
-
-function processarAmostraRealTime(data) {
-    if (!state.isMonitoring) return;
-
-    state.amostrasProcessadas++;
-    const tempoMatematicoMs = state.amostrasProcessadas * config.DATA_FETCH_INTERVAL_MS;
-
-    const newPoint = {
-        timestamp: tempoMatematicoMs,
-        filtered: data.filtered || 0,
-        raw: data.raw || 0
-    };
-
-    state.realTimeData.push(newPoint);
-    state.dataForSaving.push(newPoint);
-    state.statistics.currentADC = newPoint.filtered;
-
-    if (state.realTimeData.length > config.MAX_DATA_POINTS) {
-        state.realTimeData.shift();
+function conectarWebSocket() {
+    if (state.socketWs && (state.socketWs.readyState === WebSocket.OPEN || state.socketWs.readyState === WebSocket.CONNECTING)) {
+        return;
     }
 
-    const highlightClass = newPoint.filtered > 1000 || newPoint.filtered < 100 ? 'highlight-pulse' : '';
-    dom.currentAmplitude.innerHTML = `<span class="${highlightClass}">${newPoint.filtered}</span> <span class="unit">ADC</span>`;
-    dom.avgFrequency.innerHTML = `${(1000 / config.DATA_FETCH_INTERVAL_MS).toFixed(0)} <span class="unit">Hz</span>`;
+    // Conexão persistente: diferente do polling HTTP anterior, aqui não há handshake TCP
+    // repetido a cada amostra — o ESP32 empurra os dados assim que os gera.
+    state.socketWs = new WebSocket(`ws://${location.hostname}:${config.WEBSOCKET_PORTA}/`);
+
+    state.socketWs.onmessage = (evento) => processarLoteWs(evento.data);
+
+    state.socketWs.onclose = () => {
+        if (state.isMonitoring) setTimeout(conectarWebSocket, 500);
+    };
+
+    state.socketWs.onerror = () => {};
+}
+
+function processarLoteWs(texto) {
+    if (!state.isMonitoring) return;
+
+    // INSTRUMENTAÇÃO: mede o intervalo entre frames recebidos (proxy de estabilidade da
+    // entrega em tempo real, já que aqui não existe mais um round-trip requisição/resposta).
+    const agora = performance.now();
+    if (state.ultimoFrameWsEm !== null) {
+        state.intervalosFrame.push(agora - state.ultimoFrameWsEm);
+    }
+    state.ultimoFrameWsEm = agora;
+
+    const linhas = texto.split('\n');
+    for (const linha of linhas) {
+        if (!linha) continue;
+        const partes = linha.split(',');
+        if (partes.length < 4) continue;
+
+        const seq = Number(partes[0]);
+        const t = Number(partes[1]);
+        const raw = Number(partes[2]);
+        const filtered = Number(partes[3]);
+
+        // INSTRUMENTAÇÃO: lacuna na sequência recebida = amostra que nunca chegou.
+        // Com WebSocket isso deveria ficar em ~0 (a entrega é confiável e ordenada).
+        if (state.proximoSeqEsperado !== null && seq > state.proximoSeqEsperado) {
+            state.amostrasPerdidas += seq - state.proximoSeqEsperado;
+        }
+        state.proximoSeqEsperado = seq + 1;
+
+        const newPoint = { timestamp: t, raw, filtered };
+        state.realTimeData.push(newPoint);
+        state.dataForSaving.push(newPoint);
+        state.amostrasUtilizadas++;
+        state.ultimoTempoMsReal = t;
+    }
+
+    if (state.realTimeData.length > config.MAX_DATA_POINTS) {
+        state.realTimeData.splice(0, state.realTimeData.length - config.MAX_DATA_POINTS);
+    }
+
+    if (state.realTimeData.length === 0) return;
+
+    const ultimoPonto = state.realTimeData[state.realTimeData.length - 1];
+    state.statistics.currentADC = ultimoPonto.filtered;
+
+    const highlightClass = ultimoPonto.filtered > 1000 || ultimoPonto.filtered < 100 ? 'highlight-pulse' : '';
+    dom.currentAmplitude.innerHTML = `<span class="${highlightClass}">${ultimoPonto.filtered}</span> <span class="unit">ADC</span>`;
+
+    // INSTRUMENTAÇÃO: frequência real medida (amostras úteis / tempo real decorrido no ESP32),
+    // em vez de um valor fixo assumido — se cair abaixo de ~1000Hz, é sinal de perda/atraso real.
+    const freqReal = state.ultimoTempoMsReal > 0
+        ? (state.amostrasUtilizadas / (state.ultimoTempoMsReal / 1000))
+        : 0;
+    dom.avgFrequency.innerHTML = `${freqReal.toFixed(0)} <span class="unit">Hz</span>`;
 
     const ultimos = state.realTimeData.slice(-4).reverse();
     dom.dataTableBody.innerHTML = ultimos.map(d => {
@@ -128,10 +179,10 @@ function redimensionarCanvas() {
     dom.signalChart.height = Math.max(350, container.clientHeight - 50);
 }
 
-function desenharSinal(ctx, data, property, color, isFiltered = false) {
+function desenharSinal(ctx, data, property, color, isFiltered = false, maxValue = 1200) {
     const w = ctx.canvas.width;
     const h_plot = ctx.canvas.height - 40;
-    const scaleY = h_plot / config.VISUAL_Y_MAX;
+    const scaleY = h_plot / maxValue;
     const stepX = w / (config.MAX_DATA_POINTS - 1);
 
     ctx.beginPath();
@@ -154,20 +205,22 @@ function desenharSinal(ctx, data, property, color, isFiltered = false) {
 
 
 
-function desenharEixos(ctx, w, h) {
+function desenharEixos(ctx, w, h, escala = 1200) {
     const divisiones = 5;
 
-    
+
 
     ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
     ctx.font = '10px Quicksand';
 
-    
+
 
     ctx.textAlign = 'right';
 
-    const VISUAL_Y_MAX = config.VISUAL_Y_MAX;
+    // raw e filtered usam a MESMA escala (calculada a partir do maior valor real visto entre
+    // as duas), então os números aqui valem igualmente para as duas linhas.
+    const VISUAL_Y_MAX = escala;
 
     
 
@@ -273,7 +326,7 @@ function animarGrafico() {
     const h = dom.signalChart.height - 40;
 
     ctx.clearRect(0, 0, w, dom.signalChart.height);
-    desenharEixos(ctx, w, h);
+    desenharEixos(ctx, w, h, config.VISUAL_Y_MAX);
 
     if (state.realTimeData.length < 2) {
         ctx.fillStyle = 'rgba(255, 215, 0, 0.5)';
@@ -281,8 +334,10 @@ function animarGrafico() {
         ctx.textAlign = 'center';
         ctx.fillText('Aguardando Fluxo de Dados...', w / 2, h / 2);
     } else {
-        desenharSinal(ctx, state.realTimeData, 'raw', 'skyblue', false);
-        desenharSinal(ctx, state.realTimeData, 'filtered', '#FFD700', true);
+        // Escala FIXA e compartilhada entre as duas linhas (config.VISUAL_Y_MAX) — se o raw
+        // ultrapassar isso, ele é cortado no topo (igual a um osciloscópio com fundo de escala fixo).
+        desenharSinal(ctx, state.realTimeData, 'raw', 'skyblue', false, config.VISUAL_Y_MAX);
+        desenharSinal(ctx, state.realTimeData, 'filtered', '#FFD700', true, config.VISUAL_Y_MAX);
     }
     requestAnimationFrame(animarGrafico);
 }
@@ -295,21 +350,31 @@ function iniciarMonitoramento() {
     if (state.isMonitoring) return;
     state.isMonitoring = true;
 
-    state.amostrasProcessadas = 0;
-
     state.realTimeData = [];
     state.dataForSaving = [];
     state.statistics = { currentADC: 0, totalSamples: 0 };
+
+
+    // INSTRUMENTAÇÃO: zera as métricas da sessão anterior antes de começar uma nova
+    state.intervalosFrame = [];
+    state.ultimoFrameWsEm = null;
+    state.proximoSeqEsperado = null;
+    state.ultimoTempoMsReal = 0;
+    state.amostrasPerdidas = 0;
+    state.amostrasUtilizadas = 0;
+
     atualizarUI(true);
 
     mostrarToast('✨ CAPTURANDO SINAL EMG...');
 
-    fetch('/start').catch(e => console.error("Falha ao enviar /start:", e)); 
+    // Garante que o WebSocket está conectado antes de mandar o ESP32 começar a transmitir
+    // (senão as primeiras amostras seriam geradas sem ninguém do outro lado pra recebê-las).
+    conectarWebSocket();
 
     setTimeout(() => {
-        buscarDadosRealTime();
+        fetch('/start').catch(e => console.error("Falha ao enviar /start:", e));
         state.intervals.timer = setInterval(atualizarPainelTempo, 1000);
-    }, 100);
+    }, 150);
 }
 
 function pararESalvar() {
@@ -318,6 +383,9 @@ function pararESalvar() {
     clearInterval(state.intervals.timer);
 
     fetch('/stop').catch(e => console.error(e));
+
+     // INSTRUMENTAÇÃO: mostra o resumo da sessão no console do navegador
+    exibirResumoInstrumentacao();
 
     atualizarUI(false);
     setTimeout(() => {
@@ -329,8 +397,37 @@ function pararESalvar() {
     }, 100);
 }
 
+// INSTRUMENTAÇÃO: resumo de performance da sessão que acabou de terminar.
+// Use isto para distinguir "sinal ruim por interferência" de "sinal ruim por perda/atraso de amostras":
+// se amostrasPerdidas ficar ~0, a entrega em tempo real está confiável.
+function exibirResumoInstrumentacao() {
+    const totalAmostras = state.amostrasUtilizadas + state.amostrasPerdidas;
+    const percentPerdidas = totalAmostras > 0 ? (state.amostrasPerdidas / totalAmostras * 100) : 0;
+
+    let intervaloMedio = 0, intervaloMin = 0, intervaloMax = 0;
+    if (state.intervalosFrame.length > 0) {
+        intervaloMedio = state.intervalosFrame.reduce((a, b) => a + b, 0) / state.intervalosFrame.length;
+        intervaloMin = Math.min(...state.intervalosFrame);
+        intervaloMax = Math.max(...state.intervalosFrame);
+    }
+
+    const freqReal = state.ultimoTempoMsReal > 0
+        ? (state.amostrasUtilizadas / (state.ultimoTempoMsReal / 1000))
+        : 0;
+
+    console.log(
+        `%c[EMG] Resumo da sessão`,
+        'font-weight: bold;',
+        `\n  Amostras utilizadas: ${state.amostrasUtilizadas}`,
+        `\n  Amostras perdidas:   ${state.amostrasPerdidas} (${percentPerdidas.toFixed(2)}%)`,
+        `\n  Frequência real:     ${freqReal.toFixed(0)} Hz`,
+        `\n  Intervalo entre frames WS: média ${intervaloMedio.toFixed(1)}ms | min ${intervaloMin.toFixed(1)}ms | max ${intervaloMax.toFixed(1)}ms`,
+        `\n  Duração real (ESP32): ${(state.ultimoTempoMsReal / 1000).toFixed(2)}s`
+    );
+}
+
 function atualizarPainelTempo() {
-    const diffS = Math.floor(state.amostrasProcessadas * (config.DATA_FETCH_INTERVAL_MS / 1000));
+    const diffS = Math.floor(state.ultimoTempoMsReal / 1000);
     const m = Math.floor(diffS / 60).toString().padStart(2, '0');
     const s = (diffS % 60).toString().padStart(2, '0');
     dom.recordingTime.textContent = `${m}:${s}`;
@@ -411,7 +508,8 @@ function limparDados() {
     state.realTimeData = [];
     state.dataForSaving = [];
     state.savedFiles = [];
-    state.amostrasProcessadas = 0;
+    state.proximoSeqEsperado = null;
+    state.ultimoTempoMsReal = 0;
 
     dom.recordingTime.textContent = `00:00`;
     dom.dataTableBody.innerHTML = '';
